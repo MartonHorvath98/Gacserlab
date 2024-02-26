@@ -1,0 +1,10 @@
+INFO [2023-09-28 14:39:51] $x
+INFO [2023-09-28 14:39:51] list(EMT_candida, EMT_hallmark, pEMT_genes)
+INFO [2023-09-28 14:39:51] 
+INFO [2023-09-28 14:39:51] $filename
+INFO [2023-09-28 14:39:51] paste(results_dir, "EMT_compare_venn.png", sep = "/")
+INFO [2023-09-28 14:39:51] 
+INFO [2023-09-28 14:39:51] $output
+INFO [2023-09-28 14:39:51] T
+INFO [2023-09-28 14:39:51] 
+ERROR [2023-09-28 14:39:51] Unexpected parameter length for "category"

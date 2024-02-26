@@ -1,0 +1,3 @@
+rmarkdown::render("../OSCC_markers_report.Rmd")
+
+in console
