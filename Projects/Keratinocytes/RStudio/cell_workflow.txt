@@ -1,0 +1,55 @@
+Fungi Workflow:
+
+/////////////////////////////////////////////////////////////////////////////
+
+1. Downloading reference genom - from 'http://www.candidagenome.org/download/'
+	- ./sequence/C_parapsilosis_CDC317_current_orf_genomic.fasta.gz 
+	- ./gff/C_parapsilosis_CDC317_current_features.gff
+
+-----------------------------------------------------------------------------
+
+2. Indexing the reference .fasta file
+
+	bwa index ${ref}.fa 
+
+	bowtie2-build ${ref}.fa 
+
+	hisat2-build ${ref}.fa 
+
+for var in $(cat ../files.txt); do echo ${var}; hisat2 -q --phred33 --RNA-strandness RF --non-deterministic --time -p 16 --summary-file ../Bam/${var}_log.txt -x ../Ref/SC5314/C_albicans_SC5314 -1 ./SC5314/${var}_1.fastq -2 ./SC5314/${var}_2.fastq | samtools view -h -bS > ../Bam/${var}.bam; done
+-----------------------------------------------------------------------------
+
+3. Aligning the paired-end raw reads to the reference genome
+
+	bwa mem sample_R1.fastq sample_R2.fastq | samtools view -h -bS > [output].bam
+
+-----------------------------------------------------------------------------
+
+4. Quality checking the alignments with FastQC
+
+	fastqc  -o [output dir] -f sam -t 8 sample_align.sam
+
+	- where [-f, --format] bypasses the automatic input format detection 
+	  and sets the input file format to .sam, and [-t, --thread] speci-
+	  fies the number of cores used for processing  
+
+-----------------------------------------------------------------------------
+
+5. Fixing mate-pair issues - corrects any flaws in read-pairing that may have 
+   been introduced by the aligner
+
+	samtools fixmate -O bam,level=1 -@ 8 -m [input].sam [output]_fix.bam
+
+	- where [-O, --output] specifies the output format, .bam, level = 1
+	  sets the compression level to 1 (on a 0 to 9 scale), -@8 specifies
+	  the number of cores, and -m adds mate score tags to the output
+
+-----------------------------------------------------------------------------
+
+6. Sortin the output bam files - to a genome chromosome and coordinate 
+   positional order 
+
+	samtools sort -l 1 -@8 -o [output]_sort.bam [input]_fix.bam
+
+	- where [-l] same compression level like in fixmate, -@8 the number of 
+	  cores, and [-o, --output] the output
