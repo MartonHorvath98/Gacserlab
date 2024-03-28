@@ -1,104 +1,184 @@
-setwd("D:/Adam/Fungi/RStudio")
-source("../R_functions.R")
+################################################################################
+# 1.) Set up the work environment and the directory structure                  #
+################################################################################
 
-#data folder
-data_dir <- "data"
-if (!dir.exists("data")) {
-  dir.create("data")
+# Set working directory
+setwd(dir = choose.dir(getwd()))
+# Set downstream path
+folder <- "Fungi"
+if (!dir.exists(folder)) {
+  dir.create(folder) # create the main results folder
+}
+date <- format(Sys.Date(), "%Y-%m-%d") # get the current date
+if (!dir.exists(file.path(folder,date))) {
+  dir.create(file.path(folder, date)) # create the dated results folder
+}
+
+# Create the sub folders for: results, data, and pictures
+data_dir <- "data" # general for every results (only created once)
+data_needed <- FALSE # flag to check if the data folder is needed
+if (!dir.exists(file.path(folder,data_dir))) {
+  data_needed <- TRUE
+  dir.create(file.path(folder,data_dir)) # create the data folder
 }
 
 #plots directory
-plots_dir <- "pictures"
-if (!dir.exists(plots_dir)) {
-  dir.create(plots_dir)
+plots_dir <- "plots"
+if (!dir.exists(file.path(folder, date, plots_dir))) {
+  dir.create(file.path(folder, date, plots_dir)) # create the plots folder
 }
 
 #results directory
 results_dir <- "tables" 
-if (!dir.exists(results_dir)) {
-  dir.create(results_dir)
+if (!dir.exists(file.path(folder, date, results_dir))) {
+  dir.create(file.path(folder, date, results_dir)) # create the results folder
 }
 
 
-##########################################################
-library(dplyr)
-library(stringr)
-library(openxlsx)
-library(countToFPKM)
-#copy count files to data dir
-albi.paths <- list.files("../Counts/", pattern = "counts.txt$", full.names = T)
-albi.reads <- lapply(albi.paths, read.csv, header = T, sep = "\t", skip = 1)
-albi.counts <- lapply(albi.reads, function(x){
-  x %>% select(c(1,7))
-})
-gene.lengths <- lapply(albi.reads, function(x){
-  return(setNames(x$Length, x$Geneid))
-})
-gene.lengths <- gene.lengths[[1]]
+################################################################################
+# 2.) Load the data and the required files                                     #
+################################################################################
+# Load the user-defined functions
+source("./packages.R")
+source("./R_functions.R")
+cat(crayon::white$bold("Loading the data and the required files\n"))
+
+# Copy count files to data directory, if they are not already there
+if (data_needed) {
+  albi.path  <- choose.dir(getwd(), "Select the directory containing the count files")
+  albi.files <- list.files(albi.path, pattern = "counts.txt$", full.names = T)
+  file.copy(from = albi.files, to = file.path(folder, data_dir))
+}
+# Combine the count files into a single data frame, if not already done 
+if (!file.exists(
+  paste(file.path(folder, data_dir), "total_readcounts.xlsx", sep = "/")
+  )){
+  # READ IN COUNT FILES
+  cat(crayon::white("-> reading in count files...\n"))
+  
+  albi.reads <- lapply(list.files(file.path(folder, data_dir), 
+                                  pattern = "counts.txt$",
+                                  full.names = T), 
+                       read.csv, header = T, sep = "\t", skip = 1)
+  # CREATE DATA FRAME WITH READ COUNTS
+  cat(crayon::white("-> creating data frame with readcounts...\n"))
+  
+  albi.counts <- lapply(albi.reads, function(x){
+    # select the gene ID and the read counts
+    x %>% select(c(1,7)) 
+  })
+  albi.counts <- merge.rec(albi.counts, by = "Geneid", all = T) 
+    # merge the data frames
+  albi.counts <- albi.counts %>%
+    tibble::column_to_rownames("Geneid") %>% 
+    # set the gene ID as row names
+    setNames(str_remove(str_remove(colnames(.), "_sort.bam"), "..Bam."))
+    # clean up the column names
+  
+  # CREATE DATA FRAME WITH FPKM VALUES
+  cat(crayon::white("-> calculating FPKM values...\n"))
+  
+  gene.lengths <- lapply(albi.reads, function(x){
+    # extract the gene lengths and set the gene ID as name
+    return(setNames(x$Length, x$Geneid))
+  })
+  gene.lengths <- gene.lengths[[1]]
+  # calculate the FPKM values
+  albi.fpkm <- fpkm(as.matrix(albi.counts), gene.lengths, rep(150,12))
+  
+  # MERGE & WRITE COUNT TABLE TO EXCEL
+  cat(crayon::white("-> merging and writing count table to excel...\n"))
+  
+  albi.countTable <- merge(albi.counts %>% as.data.frame() %>% tibble::rownames_to_column("Geneid"),
+                           albi.fpkm %>% as.data.frame() %>% tibble::rownames_to_column("Geneid"),
+                           by = "Geneid", suffixes = c("","_FPKM")) %>% 
+    # merge the count and FPKM data frames
+    tibble::column_to_rownames("Geneid")
+  # write the count table to an excel file
+  write.xlsx(albi.countTable, paste(file.path(folder, data_dir),"total_readcounts.xlsx", sep = "/"),
+             colNames = T, rowNames = T)
+}
+
+# Read in the (newly) created count table for further analysis
+albi.countTable <- read.xlsx(paste(file.path(folder, data_dir),"total_readcounts.xlsx", sep = "/"),
+                         colNames = T, rowNames = T)
+
+################################################################################
+# 3.) Perform differential expression analysis                                 #
+################################################################################
+cat(crayon::white$bold("Differential expression analysis\n"))
+run_DE <- user_answer("differential expression analysis")
+
+if (run_DE){
+  # CREATE THE DESIGN MATRIX
+  cat(crayon::white("-> creating the design matrix...\n"))
+  # get sample names
+  albi.samples <- colnames(albi.countTable[,1:12])
+  albi.coldata <- data.frame("samples" = albi.samples) %>%
+    # extract the strains from the sample names
+    dplyr::mutate(samples = as.factor(samples),
+                  strain = dplyr::case_when(
+                    stringr::str_detect(albi.samples, "SC5314") ~ "SC5314",
+                    stringr::str_detect(albi.samples, "WO") ~ "WO1"
+                  ),
+                  strain = factor(strain, levels = c("SC5314","WO1"))) %>% 
+    # extract the conditions from the sample names
+    dplyr::mutate(condition = dplyr::case_when(
+      stringr::str_detect(albi.samples, "_C_") ~ "ctrl",
+      stringr::str_detect(albi.samples, "_HK_") ~ "HK"
+    ),
+    condition = factor(condition, levels = c("ctrl","HK"))) %>%
+    # extract the replicates from the sample names
+    dplyr::mutate(rep = dplyr::case_when(
+      stringr::str_detect(albi.samples, "_1$") ~ "run1",
+      stringr::str_detect(albi.samples, "_2$") ~ "run2",
+      stringr::str_detect(albi.samples, "_3$") ~ "run3"
+    ),
+    rep = factor(rep, levels = c("run1","run2","run3"))) %>%
+    # create the experiment and full setup
+    dplyr::mutate(experiment = as.factor(str_glue("{strain}_{condition}",
+                                       strain = strain,
+                                       condition = condition)),
+                  setup = as.factor(str_glue("{strain}_{condition}_{rep}",
+                                   strain = strain,
+                                   condition = condition,
+                                   rep = rep)))
+  
+  # PERFORM THE DIFFERENTIAL EXPRESSION ANALYSIS
+  cat(crayon::white("-> performing the differential expression analysis...\n"))
+  # Run DESeq2
+  albi.deseq <- make_deseq(matrix = albi.counts, 
+                           coldata =  coldata,
+                           design = "experiment")
+  # GET RESULTS
+  # Significance thresholds: log2FC > 1.5, p-value < 0.05
+  cat(crayon::white("-> exporting the results...\n"))
+  # 1. compare strains - SC5314 vs WO1
+  strain.res <- get_results(albi.deseq$dds, 1.5, 0.05, 
+                            contrast = c("experiment","SC5314_HK","WO1_HK"), 
+                            name = c(''))
+  write.xlsx(strain.res$sig_df, paste(file.path(folder,date,results_dir),
+                                      "strain_compare_degs.xlsx",sep = "/"))
+  
+  SC5314.res <- get_results(albi.deseq$dds, 1.5, 0.05, 
+                            contrast = c("experiment","SC5314_HK","SC5314_ctrl"), 
+                            name = c(''))
+  write.xlsx(SC5314.res$sig_df, paste(file.path(folder,date,results_dir),
+                                      "SC5314_degs.xlsx",sep = "/"))
+  
+  WO1.res <- get_results(albi.deseq$dds, 1.5, 0.05, 
+                         contrast = c("experiment","WO1_HK","WO1_ctrl"), 
+                         name = c(''))
+  write.xlsx(WO1.res$sig_df, paste(file.path(folder,date,results_dir),
+                                   "WO1_degs.xlsx",sep = "/"))
+}
+################################################################################
+# 4.) Perform functional analyses                                              #
+################################################################################
+### 4.1 Perform cluster analysis on the differentially expressed genes
 
 
 
-#merge & write count table
-albi.counts <- merge.rec(albi.counts, by = "Geneid", all = T)
-albi.counts <- albi.counts %>%
-  tibble::column_to_rownames("Geneid") %>%
-  setNames(str_sub(colnames(.), 7L, -10L))
-
-albi.fpkm <- fpkm(as.matrix(albi.counts), gene.lengths, rep(150,12)) 
-
-albi.countTable <- merge(albi.counts %>% as.data.frame() %>% tibble::rownames_to_column("Geneid"),
-                         albi.fpkm %>% as.data.frame() %>% tibble::rownames_to_column("Geneid"),
-                         by = "Geneid", suffixes = c("_RC","_FPKM"))
-write.xlsx(albi.countTable, paste(results_dir,"total_readcounts.xlsx",sep = "/"),
-           colNames = T, rowNames = T)
-
-library(stringr)
-library(DESeq2)
-library(edgeR)
-
-strain <- as.factor(c(rep("SC5314",6), rep("WO1",6)))
-condition <- as.factor(rep(c(rep("ctrl",3),rep("HK",3)),2))
-rep <- as.factor(rep(paste("run", seq(1,3), sep = ""), 4))
-experiment <- as.factor(str_glue("{strain}_{condition}",
-                                 strain = strain,
-                                 condition = condition))
-sample <- as.factor(str_glue("{strain}_{condition}_{rep}",
-                             strain = strain,
-                             condition = condition,
-                             rep = rep))
-coldata <- data.frame(
-  "strain" = strain,
-  "condition" = condition,
-  "rep" = rep,
-  "experiment" = experiment,
-  "sample" = sample
-)
-
-albi.deseq <- make_deseq(matrix = albi.counts, 
-                         coldata =  coldata,
-                         design = "strain + condition")
-strain.deseq <- make_deseq(matrix = albi.counts, 
-                         coldata =  coldata,
-                         design = "experiment")
-
-##########################################################
-library(ggplot2)
-library(ggbiplot)
-library(ggrepel)
-library(FactoMineR)
-albi.pca <- make_pca(albi.deseq$rld, group = experiment)
-ggsave(paste(plots_dir,"albicans_pca.png",sep="/"), plot = albi.pca,
-       width = 8, height = 8, units = 'in')
-
-library(fdrtool)
-library(openxlsx)
-# cell_effect.res <- get_results(albi.deseq$dds, 0, 0.05, contrast = list("condition_HK_vs_ctrl"), name = c(''))
-strain.res <- get_results(strain.deseq$dds, 1.5, 0.05, contrast = c("experiment","SC5314_HK","WO1_HK"), name = c(''))
-SC5314.res <- get_results(strain.deseq$dds, 1.5, 0.05, contrast = c("experiment","SC5314_HK","SC5314_ctrl"), name = c(''))
-write.xlsx(SC5314.res$sig_df, paste(results_dir,"SC5314_degs.xlsx",sep = "/"))
-
-WO1.res <- get_results(strain.deseq$dds, 1.5, 0.05, contrast = c("experiment","WO1_HK","WO1_ctrl"), name = c(''))
-write.xlsx(WO1.res$sig_df, paste(results_dir,"WO1_degs.xlsx",sep = "/"))
 
 ##########################################################
 library(genefilter)
@@ -111,16 +191,28 @@ library(dendsort)
 library(cluster)
 library(factoextra)
 library(circlize)
-mat <- rlog(as.matrix(albi.counts))
-count.mat <- make_matrix(mat, unique(c(rownames(SC5314.res$sig_df),
-                                       rownames(WO1.res$sig_df))))#,
-                                       #rownames(strain.res$sig_df))))
+log.matrix <- rlog(as.matrix(assay(albi.deseq$dds)))
+lognorm.matrix <- make_matrix(log.matrix, 
+                              unique(c(rownames(SC5314.res$sig_df),
+                                       rownames(WO1.res$sig_df)))
+                              )
 
 
 #c("silhouette", "wss", "gap_stat")
-fviz_nbclust(count.mat, kmeans, method = "wss")
-annot <- HeatmapAnnotation(Strain = as.factor(coldata$strain),
-                           Experiment = as.factor(coldata$condition),
+opt.clust <- fviz_nbclust(count.mat, kmeans, method = "silhouette", k.max = 10)
+opt.clust <- opt.clust +
+  # geom_vline(xintercept = 4, linetype = 2, color = "red") +
+  # annotate("label", x = 5.5, y = 0.35, color = "red", size = 4, 
+  #          label = "choosen: (k=4)") + 
+  # annotate("text", x = 5.5, y = 0.32, color = "red", size = 4, 
+  #          label = round(opt.clust$data[4,2],4)) +
+  annotate("label", x = 3, y = 0.35, color = "steelblue", size = 4,
+           label = "optimal: (k=2)") + 
+  annotate("text", x = 3, y = 0.32, color = "steelblue", size = 4, 
+           label = round(opt.clust$data[2,2],4))
+
+heatmap.annot <- HeatmapAnnotation(Strain = as.factor(albi.coldata$strain),
+                           Experiment = as.factor(albi.coldata$condition),
                            show_annotation_name = F)
 
 #albi.h1 <- 
