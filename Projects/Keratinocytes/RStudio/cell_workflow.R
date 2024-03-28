@@ -1,267 +1,315 @@
-setwd("D:/Adam/Cells")
-source("../R_functions.R")
+################################################################################
+# 1.) Set up the work environment and the directory structure                  #
+################################################################################
 
+# Set working directory
+setwd(dir = choose.dir(getwd()))
+# Set downstream path
+human.folder <- "Cells"
+if (!dir.exists(human.folder)) {
+  dir.create(human.folder) # create the main results folder
+}
+date <- format(Sys.Date(), "%Y-%m-%d") # get the current date
+if (!dir.exists(file.path(human.folder,date))) {
+  dir.create(file.path(human.folder, date)) # create the dated results human.folder
+}
 
-library(GenomicFeatures)
-library(Rsamtools)
-library(GenomeInfoDb)
+# Create the sub human.folders for: results, data, and pictures
+data_dir <- "data" # general for every results (only created once)
+data_needed <- FALSE # flag to check if the data human.folder is needed
+if (!dir.exists(file.path(human.folder,data_dir))) {
+  data_needed <- TRUE
+  dir.create(file.path(human.folder,data_dir)) # create the data human.folder
+}
 
-human.txdb <- vulcankeTxDbFromGFF("../../grch38/Homo_sapiens.GRCh38.96.gff3", 
-                              dataSource = "Ensembl", 
-                              organism = "Homo sapiens")
-human.genes <- exonsBy(human.txdb, by = "gene")
+#plots directory
+plots_dir <- "plots"
+if (!dir.exists(file.path(human.folder, date, plots_dir))) {
+  dir.create(file.path(human.folder, date, plots_dir)) # create the plots human.folder
+}
 
-human.files <- list.files("./Align/", pattern = ".bam$", full.names = T)
-human.list <- BamFileList(human.files, yieldSize = 2000000)
+#results directory
+results_dir <- "tables" 
+if (!dir.exists(file.path(human.folder, date, results_dir))) {
+  dir.create(file.path(human.folder, date, results_dir)) # create the results human.folder
+}
 
-library(BiocParallel)
-register(SnowParam())
+################################################################################
+# 2.) Load the data and the required files                                     #
+################################################################################
+# Load the user-defined functions
+source("./human.packages.R")
+source("./R_functions.R")
+cat(crayon::white$bold("Loading the data and the required files\n"))
 
-library(GenomicAlignments)
-human.reads <- summarizeOverlaps(features = human.genes, 
-                                 reads = human.list, 
-                                 mode = "Union", 
-                                 ignore.strand = F, 
-                                 singleEnd = F, 
-                                 fragments = T, 
-                                 preprocess.reads = invertStrand)
-head(assay(human.reads))
-readcounts <- assay(human.reads)
-
-
-library(stringr)
-bam.names <- as.list(lapply(strsplit(human.files, "/"),"[[",3)) #get samplenames
-bam.treatment <- sapply(sapply(bam.names,strsplit, "_"), "[[", 2)
-bam.treatment <- factor(bam.treatment, levels = c("C","Ca","Cp"), 
-                        labels = c("ctrl","C.albi","C.para"))
-bam.cell_line <- sapply(sapply(bam.names,strsplit, "_"), "[[", 1)
-bam.cell_line <- factor(bam.cell_line, levels = c("HC","HK"), 
-                        labels = c("HaCat","HPVKER"))
-bam.condition <-  as.factor(paste(bam.cell_line, bam.treatment))
-
-#separate treatment
-bam.run <- as.factor(sapply(bam.names, function(x) paste("run", (substr(x, str_locate(x, ".bam") - 1, str_locate(x, ".bam") - 1))))) #separate run
-
-human.coldata <- data.frame(samplenames = as.character(bam.names),
-                      cells = bam.cell_line,
-                      treatment = bam.treatment,
-                      condition = bam.condition,
-                      run = bam.run) #vulcanke metadate table
-
-colnames(readcounts) <- as.character(human.coldata$condition)
-
-write.table(readcounts, "./Results/RStudio/tables/total_readcounts.csv", 
-            sep = ",", na = "NA", dec = ".", row.names = T, col.names = T)
-
-
-library(DESeq2)
-library(edgeR)
-human.deseq <- make_deseq(matrix = assay(human.reads),
-                          coldata = human.coldata,
-                          design = "cells + treatment")
-resultsNames(human.deseq$dds)
-
-hacat.deseq <- make_deseq(matrix = assay(human.reads)[,1:9],
-                          coldata = human.coldata[1:9,],
-                          design = "treatment")
-resultsNames(hacat.deseq$dds)
-
-hpvker.deseq <- make_deseq(matrix = assay(human.reads)[,10:18],
-                          coldata = human.coldata[10:18,],
-                          design = "treatment")
-resultsNames(hpvker.deseq$dds)
-
-library(ggplot2)
-library(ggbiplot)
-library(ggrepel)
-hacat.pca <- make_pca(rld = hacat.deseq$rld, 
-                      group = hacat.deseq$rld$treatment,
-                      labs = c("Control", "C.albicans (SC5314)",
-                               "C.parapsilosis (CLIB214)"),
-                      cols = c("C.para" = "salmon",
-                               "C.albi" = "darkred",
-                               "ctrl" = "turquoise"))
-hacat.pca <- hacat.pca + 
-  theme(legend.position = "bottom")
-ggsave("./Results/Rstudio/pictures/hacat_pca.png", plot = hacat.pca,
-       width = 10, height = 10, units = 'in')
-
-hpvker.pca <- make_pca(rld = hpvker.deseq$rld, 
-                      group = hpvker.deseq$rld$treatment,
-                      labs = c("Control", "C.albicans (SC5314)",
-                               "C.parapsilosis (CLIB214)"),
-                      cols = c("C.para" = "salmon",
-                               "C.albi" = "darkred",
-                               "ctrl" = "turquoise"))
-hpvker.pca <- hpvker.pca + 
-  theme(legend.position = "bottom")
-ggsave("./Results/Rstudio/pictures/hpvker_pca.png", plot = hpvker.pca,
-       width = 10, height = 10, units = 'in')
-
-cells.pca <- make_pca(rld = human.deseq$rld, 
-                      group = human.deseq$rld$condition,
-                      labs = c("C.albicans (HaCat)", "C.parapsilosis (HaCat)", "Control (HaCat)",
-                               "C.albicans (HPV-KER)", "C.parapsilosis (HPV-KER)", "Control (HPV-KER)"),
-                      cols = c("HaCat C.para" = "salmon",
-                               "HaCat C.albi" = "darkred",
-                               "HaCat ctrl" = "orange",
-                               "HPVKER C.para" = "blue",
-                               "HPVKER C.albi" = "purple",
-                               "HPVKER ctrl" = "turquoise"))
-ggsave("./Results/Rstudio/pictures/total_pca.png", plot = cells.pca,
-       width = 12, height = 12, units = 'in')
-
-library(fdrtool)
-library(openxlsx)
-library(AnnotationDbi)
-library(org.Hs.eg.db)
-# cells.res <- get_results(human.deseq$dds, 1.5, 0.05, 
-#                          contrast = list("cells_HPVKER_vs_HaCat"), 
-#                          name = c(''))
-
-hacat.c_albi_res <- get_results(hacat.deseq$dds, 1.5, 0.05, 
-                                contrast = list("treatment_C.albi_vs_ctrl"), 
-                                name = c(''))
-
-hacat.c_para_res <- get_results(hacat.deseq$dds, 1.5, 0.05, 
-                                contrast = list("treatment_C.para_vs_ctrl"), 
-                                name = c(''))
-
-hpvker.c_albi_res <- get_results(hpvker.deseq$dds, 1.5, 0.05, 
-                                 contrast = list("treatment_C.albi_vs_ctrl"), 
-                                 name = c(''))
-
-hpvker.c_para_res <- get_results(hpvker.deseq$dds, 1.5, 0.05, 
-                                 contrast = list("treatment_C.para_vs_ctrl"), 
-                                 name = c(''))
-
-human.sig_results <- list(
-  "CTRL vs C.albi (HaCat)" = hacat.c_albi_res$sig_df,
-  "CTRL vs C.para (HaCat)" = hacat.c_para_res$sig_df,
-  "CTRL vs C.albi (HPV-KER)" = hpvker.c_albi_res$sig_df,
-  "CTRL vs C.para (HPV-KER)" = hpvker.c_para_res$sig_df
-)
-set_names <- names(human.sig_results)
-
-human.sig_results <- lapply(names(human.sig_results), function(x){
-  return(human.sig_results[[x]] %>%
-           dplyr::mutate(
-             esnembl = geneID,
-             geneName = mapIds(org.Hs.eg.db, human.sig_results[[x]]$geneID,
-                               keytype = "ENSEMBL", column = "SYMBOL",
-                               multiVals = "first"),
-             entrezID = mapIds(org.Hs.eg.db, human.sig_results[[x]]$geneID,
-                               keytype = "ENSEMBL", column = "ENTREZID",
-                               multiVals = "first")) %>%
-           dplyr::select(!geneID) %>%
-           dplyr::relocate(where(is.character), .before = where(is.numeric)) %>%
-           dplyr::relocate(significance, .after = everything()))
+if (!file.exists(
+  paste(file.path(human.folder, data_dir), "total_readcounts.xlsx", sep = "/")
+)) {
+  # EXTRACT ANNOTATIONS
+  cat(crayon::white("-> Extracting annotations from the GFF3 file...\n"))
+  # Extracting transcript annotations from the GFF3 file into a TxDb object
+  human.txdb <- makeTxDbFromGFF("../reference/Homo_sapiens.GRCh38.96.gff3", 
+                                dataSource = "Ensembl", 
+                                organism = "Homo sapiens")
+  # Extracting gene features from the TxDb object
+  human.genes <- exonsBy(human.txdb, by = "gene")
   
-})
-names(human.sig_results) <- set_names
-sapply(names(human.sig_results), function(x){
-  openxlsx::write.xlsx(human.sig_results[[x]], paste0("./Results/RStudio/tables/",x,".xlsx"))})
+  # READ IN BAM ALIGNMENT FILES
+  cat(crayon::white("-> Extracting read counts from the BAM files...\n"))
+  human.path  <- choose.dir(getwd(), "Select the directory containing the '.bam' files")
+  human.files <- list.files(human.path, pattern = ".bam$", full.names = T)
+  human.list <- BamFileList(human.files, yieldSize = 2000000)
+  
+  # CALCULATE READCOUNTS
+  cat(crayon::white("-> Calculating read counts..."))
+  # Set up parallel computing
+  register(SnowParam())
+  # Calculate read counts
+  human.reads <- summarizeOverlaps(features = human.genes, 
+                                   reads = human.list, 
+                                   # (default) count reads overlapping single exon
+                                   mode = "Union",  
+                                   # use strand-specificity
+                                   ignore.strand = F, 
+                                   # paired-end reads
+                                   singleEnd = F, 
+                                   fragments = T, 
+                                   # strand-specificity => first strand, RF
+                                   preprocess.reads = invertStrand)
+
+  # CREATE DATA FRAME WITH READ COUNTS
+  cat(crayon::white("-> creating data frame with readcounts...\n"))
+  # Extract count matrix
+  human.counts <- assay(human.reads)
+  human.counts <- human.counts %>%
+    as.data.frame() %>%
+    # rename columns
+    setNames(str_remove(colnames(.), ".bam"))
+  # Save the read counts to an excel file
+  write.xlsx(human.counts, 
+             paste(file.path(human.folder, data_dir),"total_readcounts.xlsx", sep = "/"),
+             keepNA = T, na.string = "NA", colNames = T, rowNames = T)
+}
+
+################################################################################
+# 3.) Perform differential expression analysis                                 #
+################################################################################
+# Read in the (newly) created count table for further analysis
+human.countTable <- read.xlsx(paste(file.path(human.folder, data_dir),"total_readcounts.xlsx", sep = "/"),
+                             colNames = T, rowNames = T)
+
+cat(crayon::white$bold("Differential expression analysis\n"))
+run_DE <- user_answer("differential expression analysis")
+
+if (run_DE){
+  # CREATE THE DESIGN MATRIX
+  cat(crayon::white("-> creating the design matrix...\n"))
+  # get sample names
+  human.samples <- colnames(human.countTable)
+  human.coldata <- data.frame("samplenames" = human.samples) %>%
+    # extract the cell line from the sample names
+    dplyr::mutate(cells = dplyr::case_when(
+      stringr::str_detect(human.samples, "HC_") ~ "HaCaT",
+      stringr::str_detect(human.samples, "HK_") ~ "HPVKER"
+    ),
+    cells = factor(cells, levels = c("HaCaT","HPVKER"))) %>%
+    # extract the treatment from the sample names
+    dplyr::mutate(samplenames = as.factor(samplenames),
+                  treatment = dplyr::case_when(
+                    stringr::str_detect(human.samples, "_Ca_") ~ "C.albi",
+                    stringr::str_detect(human.samples, "_Cp_") ~ "C.para",
+                    TRUE ~ "ctrl"),
+                  treatment = factor(treatment, levels = c("ctrl","C.albi","C.para"))) %>% 
+    # extract the replicates from the sample names
+    dplyr::mutate(rep = dplyr::case_when(
+      stringr::str_detect(human.samples, "_1$") ~ "run1",
+      stringr::str_detect(human.samples, "_2$") ~ "run2",
+      stringr::str_detect(human.samples, "_3$") ~ "run3"
+    ),
+    rep = factor(rep, levels = c("run1","run2","run3"))) %>%
+    # create the experiment and full setup
+    dplyr::mutate(condition = as.factor(str_glue("{cells}_{treatment}",
+                                                  cells = cells,
+                                                  treatment = treatment)))
+
+  # PERFORM THE DIFFERENTIAL EXPRESSION ANALYSIS
+  cat(crayon::white("-> performing the differential expression analysis...\n"))
+  # Effects of C.albi and C.para infection on HaCaT
+  hacat.deseq <- make_deseq(matrix = human.countTable[,1:9],
+                            coldata = human.coldata[1:9,],
+                            design = "treatment")
+  # Effects of C.albi and C.para infection on HPV-KER
+  hpvker.deseq <- make_deseq(matrix = human.countTable[,10:18],
+                            coldata = human.coldata[10:18,],
+                            design = "treatment")
+  
+  # GET RESULTS
+  cat(crayon::white("-> Calculating significant the results...\n"))
+  # Significance thresholds: log2FC > 1.5, p-value < 0.05
+  # 1. HaCaT response to Candida albicans
+  hacat_vs_ca.res <- get_results(hacat.deseq$dds, 1.5, 0.05, 
+                                  contrast = c("treatment","C.albi","ctrl"), 
+                                  name = c(''))
+  # 2. HaCaT response to Candida parapsilosis
+  hacat_vs_cp.res <- get_results(hacat.deseq$dds, 1.5, 0.05, 
+                                  contrast = c("treatment","C.para","ctrl"), 
+                                  name = c(''))
+  # 3. HPV-KER response to Candida albicans
+  hpvker_vs_ca.res <- get_results(hpvker.deseq$dds, 1.5, 0.05, 
+                                   contrast = c("treatment","C.albi","ctrl"), 
+                                   name = c(''))
+  # 4. HPV-KER response to Candida parapsilosis
+  hpvker_vs_cp.res <- get_results(hpvker.deseq$dds, 1.5, 0.05, 
+                                   contrast = c("treatment","C.para","ctrl"), 
+                                   name = c(''))
+  
+  # EXPORT THE RESULTS
+  cat(crayon::white("-> exporting the results...\n"))
+  # Save the list of names for the results
+  names <- c("CTRL_vs_C.albi_HaCat", "CTRL_vs_C.para_HaCat",
+             "CTRL_vs_C.albi_HPV-KER", "CTRL_vs_C.para_HPV-KER")
+  # Save the results to a list
+  human.results <- list(hacat_vs_ca.res$df, hacat_vs_cp.res$df,
+                    hpvker_vs_ca.res$df, hpvker_vs_cp.res$df)
+  # Save the significant results to a list
+  human.sig.results <- list(hacat_vs_ca.res$sig_df, hacat_vs_cp.res$sig_df,
+                            hpvker_vs_ca.res$sig_df, hpvker_vs_cp.res$sig_df)
+  # Add gene symbol and entrezID annotation to the results
+  human.results <- lapply(human.results, annotate_results)
+  human.sig.results <- lapply(human.sig.results, annotate_results)
+  # names the results
+  names(human.results) <- names
+  names(human.sig.results) <- names
+  
+  # Export the results to an excel file
+  sapply(names(human.results), function(x){
+    openxlsx::write.xlsx(
+      human.res[[x]],
+      paste(file.path(human.folder,date,results_dir),
+            paste0(x,".xlsx"), sep = "/"))})
+  sapply(names(human.sig.results), function(x){
+    openxlsx::write.xlsx(
+      human.res[[x]],
+      paste(file.path(human.folder,date,results_dir),
+            paste0(x,"_sigGene.xlsx"), sep = "/"))})
+}
 
 
-library(genefilter)
-library(pheatmap)
-library(RColorBrewer)
-library(devtools)
-library(ComplexHeatmap)
-library(dendextend)
-library(dendsort)
-library(cluster)
-library(factoextra)
-library(circlize)
-human.mat <- rlog(assay(human.reads))
-human.count.mat <- make_matrix(human.mat, 
-                               unique(c(#rownames(cells.res$sig_df),
-                                        rownames(hacat.c_albi_res$sig_df),
-                                        rownames(hacat.c_para_res$sig_df),
-                                        rownames(hpvker.c_albi_res$sig_df),
-                                        rownames(hpvker.c_para_res$sig_df))))
+################################################################################
+# 4.) Perform functional analyses                                              #
+################################################################################
+cat(crayon::white$bold("Functional analysis\n"))
+run_HM <- user_answer("heatmap of DEGs")
 
-fviz_nbclust(human.count.mat, kmeans, method = "wss")
-human.annot <- HeatmapAnnotation(Cells = as.factor(human.coldata$cells),
-                           Treament = as.factor(human.coldata$treatment),
-                           show_annotation_name = F)                                        
-
-human.h1 <- expression_heatmap(mat = human.count.mat, clusters = 4, columns = 2,
+### 4.1 Create a heatmap of the differentially expressed genes
+if (run_HM){
+  cat(crayon::white("-> Performing cluster analysis on the differentially expressed genes...\n"))
+  # Create a matrix of the differentially expressed genes
+  human.log.matrix <- rlog(assay(human.reads))
+  human.lognorm.matrix <- make_matrix(human.log.matrix,
+                                      unique(
+                                        unlist(
+                                          lapply(human.sig.results, rownames))))
+  
+  # Find optimal number of clusters
+  (fviz_nbclust(human.lognorm.matrix, kmeans, method = "silhouette"))
+  
+  # CREATE THE HEATMAP
+  cat(crayon::white("-> Creating the heatmap...\n"))
+  # Create the heatmap annotation
+  human.annot <- HeatmapAnnotation(
+    Cells = as.factor(human.coldata$cells),
+    Treament = as.factor(human.coldata$treatment),
+    show_annotation_name = F) 
+  
+  # Create an expression heatmap
+  human.heatmap <- expression_heatmap(mat = human.lognorm.matrix, clusters = 4, columns = 2,
                               coldata = human.coldata, annot = human.annot,
                               method1 = "euclidean", method2 = "ward.D")
+  # Create a fold-change heatmap
+  human.expr <- lapply(human.sig.results, 
+                       function(x){x %>% select(ensembl, log2FoldChange)}) %>% 
+    merge.rec(., by="ensembl", all=T, suffixes=c("", "")) %>% 
+    column_to_rownames("ensembl") %>%
+    setNames(names)
+  human.expr.matrix <- logFC_heatmap(mat = as.matrix(human.expr), 
+                                     dend = human.heatmap$dendrogram)
 
-library(dplyr)
-library(plyr)
-library(tidyr)
-library(tibble)
-human.expr <- list(
-  # data.frame("geneID" = cells.res$sig_df$geneID,
-  #            `HaCat vs HPV-KER` = cells.res$sig_df$log2FoldChange, 
-  #            row.names = row.names(cells.res$sig_df)),
-  data.frame("geneID" = hacat.c_albi_res$sig_df$geneID,
-             `CTRL vs C.albi (HaCat)` = hacat.c_albi_res$sig_df$log2FoldChange,
-             row.names = row.names(hacat.c_albi_res$sig_df)),
-  data.frame("geneID" = hacat.c_para_res$sig_df$geneID,
-             `CTRL vs C.para (HaCat)` = hacat.c_para_res$sig_df$log2FoldChange,
-             row.names = row.names(hacat.c_para_res$sig_df)),
-  data.frame("geneID" = hpvker.c_albi_res$sig_df$geneID,
-             `CTRL vs C.albi (HPV-KER)` = hpvker.c_albi_res$sig_df$log2FoldChange,
-             row.names = row.names(hpvker.c_albi_res$sig_df)),
-  data.frame("geneID" = hpvker.c_para_res$sig_df$geneID,
-             `CTRL vs C.para (HPV-KER)` = hpvker.c_para_res$sig_df$log2FoldChange,
-             row.names = row.names(hpvker.c_para_res$sig_df)))
+  # SAVE THE HEATMAP
+  cat(crayon::white("-> Saving the heatmap...\n"))
+  # Save the heatmap to a file
+  png(file.path(human.folder, date, plots_dir, "full_heatmap.png"), 
+      width = 14, height = 10, units = 'in', res = 300)
+  draw(human.heatmap$heatmap + human.expr.matrix, merge_legend = T)
+  dev.off()
+}
 
-human.expr.df <- merge.rec(human.expr, by="geneID", all=T, suffixes=c("", ""))
-human.expr.df <- human.expr.df %>% column_to_rownames("geneID") %>%
-  setNames(., c("CTRL vs C.albi (HaCat)", "CTRL vs C.para (HaCat)",#"HaCat vs HPV-KER", 
-                "CTRL vs C.albi (HPV-KER)","CTRL vs C.para (HPV-KER)"))
-
-
-human.expr.mat <- logFC_heatmap(mat = as.matrix(human.expr.df), dend = human.h1$dendrogram)
-
-png("./Results/Rstudio/pictures/total_heatmap.png", 
-    width = 14, height = 10, units = 'in', res = 300)
-draw(human.h1$heatmap + human.expr.mat, merge_legend = T)
-dev.off()
-
-library(scales)
-library(viridis)
-human.results <- list(
-  #"HaCat vs HPV-KER" = cells.res$df,
-  "CTRL vs C.albi (HaCat)" = hacat.c_albi_res$df,
-  "CTRL vs C.para (HaCat)" = hacat.c_para_res$df,
-  "CTRL vs C.albi (HPV-KER)" = hpvker.c_albi_res$df,
-  "CTRL vs C.para (HPV-KER)" = hpvker.c_para_res$df
-)
+# PLOT MEAN-ABUNDANCE PLOTS
+cat(crayon::white("-> Creating the mean-abundance plots...\n"))
+# Create the mean-abundance plots
 human.MA <- list()
 for (i in names(human.results)) {
   human.MA[[i]] <- MA_plotting(human.results[[i]])
-  ggsave(paste("./Results/Rstudio/pictures/",i,"MAplot.png"), 
+  # Save the plot to a file
+  ggsave(file.path(human.folder, date, plots_dir, paste0(i,"_MAplot.png")), 
                 plot = human.MA[[i]], width = 10, height = 6, units = 'in')
 }
-
-library(org.Hs.eg.db)
-library(ggplot2)
-#colourPalette <- 
-human.results <- lapply(human.results, function(x){
-  return(x %>%
-           dplyr::rename(., ensembl = geneID) %>%
-           dplyr::mutate(geneID = mapIds(org.Hs.eg.db, x$ensembl, 
-                                         keytype = "ENSEMBL", column = "SYMBOL",multiVals = "first"),
-                         entrezID = mapIds(org.Hs.eg.db, x$ensembl, 
-                                           keytype = "ENSEMBL", column = "ENTREZID",multiVals = "first")) %>%
-           dplyr::relocate(where(is.character), .before = where(is.numeric)) %>%
-           dplyr::relocate(significance, .after = everything()))
-    
-})
-
-
+# PLOT VOLCANO PLOTS
+cat(crayon::white("-> Creating the volcano plots...\n"))
+# Create the volcano plots
 human.expr_plot <- list()
 for (i in names(human.results)) {
   human.expr_plot[[i]] <- vulcan_plotting(human.results[[i]])
-  ggsave(paste("./Results/Rstudio/pictures/",i,"vulcanplot.png"), 
+  # Save the plot to a file
+  ggsave(file.path(human.folder, date, plots_dir, paste0(i,"vulcanplot.png")), 
          plot = human.expr_plot[[i]], width = 12, height = 8, units = 'in')
 }
+
+# Create Venn diagram of shared differentially expressed genes 
+human.venn <- make_venn(human.sig.results$CTRL_vs_C.albi_HaCat, human.sig.results$CTRL_vs_C.para_HaCat,
+                        human.sig.results$`CTRL_vs_C.albi_HPV-KER`, human.sig.results$`CTRL_vs_C.para_HPV-KER`,
+                        c("HaCaT vs C.albi", "HaCaT vs C.para", 
+                          "HPV-KER vs C.albi", "HPV-KER vs C.para"), "venn_diagram") 
+
+venn.diagram(x = list(human.sig.results$CTRL_vs_C.albi_HaCat$ensembl,
+                      human.sig.results$CTRL_vs_C.para_HaCat$ensembl,
+                      human.sig.results$`CTRL_vs_C.albi_HPV-KER`$ensembl,
+                      human.sig.results$`CTRL_vs_C.para_HPV-KER`$ensembl),
+             category.names = c("HaCaT vs C.albi", "HaCaT vs C.para", 
+                                "HPV-KER vs C.albi", "HPV-KER vs C.para"),
+             filename = paste0(file.path(human.folder, date, plots_dir), "/","venn.png"), 
+             output = T,
+             
+             # Output features
+             imagetype="png" ,
+             height = 1960 , 
+             width = 1960 , 
+             resolution = 300,
+             compression = "lzw",
+             # Circles
+             lwd = 2,
+             lty = 'solid',
+             col = "grey",
+             fill = brewer.pal(4, "Dark2"),
+             
+             # Numbers
+             cex = .6,
+             fontface = "bold",
+             fontfamily = "sans",
+             
+             # Set names
+             cat.cex = 0.6,
+             cat.fontface = "bold",
+             cat.fontfamily = "sans")
+
+
+
+
+
+
+
+
+
 
 library(clusterProfiler)
 library(KEGGgraph)
@@ -681,9 +729,11 @@ upset_BP_plot <- upset(data = human.upset_BP,
                              bar_number_threshold = 1,
                              counts=T,
                              color = "black")
-                           + theme(plot.background=element_rect(fill='#E5D3B3', color = "transparent"),
+                           + theme(#plot.background=element_rect(fill='#E5D3B3', color = "transparent"),
                                    legend.background = element_blank(),
+                                   legend.location = "panel",
                                    legend.position = "top",
+                                   legend.title.position = "top",
                                    legend.spacing.y = unit(5,'mm'),
                                    legend.direction = "horizontal",
                                    legend.key.size = unit(5,'mm'),
