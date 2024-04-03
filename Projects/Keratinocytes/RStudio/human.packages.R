@@ -78,9 +78,15 @@ suppressPackageStartupMessages(library(AnnotationDbi))
 if (!require("org.Hs.eg.db")) BiocManager::install("org.Hs.eg.db", update = F)
 suppressPackageStartupMessages(library(org.Hs.eg.db))
 # provides mappings between Entrez Gene identifiers and other gene identifiers
+if (!require("GO.db")) BiocManager::install("GO.db", update = F)
+suppressPackageStartupMessages(library(GO.db))
+# provides mappings between GO terms and other gene identifiers
 if (!require("genefilter")) BiocManager::install("genefilter",version = "3.8", update = F)
 suppressPackageStartupMessages(library(genefilter))
 # provides methods for filtering genes based on different criteria 
+if (!require("clusterProfiler")) BiocManager::install("clusterProfiler", update = F)
+suppressPackageStartupMessages(library(clusterProfiler))
+# provides a set of functions to perform gene set enrichment analysis
 
 # 5.) Pathway analysis packages ################################################
 if (!require("dendextend")) install.packages("dendextend")
@@ -92,6 +98,9 @@ suppressPackageStartupMessages(library(dendsort))
 if (!require("cluster")) install.packages("cluster")
 suppressPackageStartupMessages(library(cluster))
 # provides a set of functions to cluster data
+if (!require("data.tree")) install.packages("data.tree")
+suppressPackageStartupMessages(library(data.tree))
+# provides a set of functions to create and manipulate tree structures
 
 # 6.) Visualization packages ###################################################
 
@@ -114,6 +123,9 @@ suppressPackageStartupMessages(library(RColorBrewer))
 if (!require("ComplexHeatmap")) install.packages("ComplexHeatmap")
 suppressPackageStartupMessages(library(ComplexHeatmap))
 # provides a function to create complex heatmaps with multiple annotations
+if (!require("ComplexUpset")) install.packages("ComplexUpset")
+suppressPackageStartupMessages(library(ComplexUpset))
+# provides a function to create complex UpSet plots
 if (!require("circlize")) install.packages("circlize")
 suppressPackageStartupMessages(library(circlize))
 # provides a function to create circular plots for genomic data
@@ -136,3 +148,12 @@ suppressPackageStartupMessages(library(ggvenn))
 if (!require("GOplot")) install.packages("GOplot", repos = c("http://R-Forge.R-project.org"))
 suppressPackageStartupMessages(library(GOplot))
 # provides a function to create gene ontology plots
+if (!require("KEGGgraph")) BiocManager::install("KEGGgraph", update = F)
+suppressPackageStartupMessages(library(KEGGgraph))
+# provides a function to create KEGG pathway plots
+if (!require("pathview")) install.packages("pathview")
+suppressPackageStartupMessages(library(pathview))
+# provides a function to create pathway plots
+if (!require("Rgraphviz")) install.packages("Rgraphviz")
+suppressPackageStartupMessages(library(Rgraphviz))
+# provides a function to create graph plots

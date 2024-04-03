@@ -211,7 +211,8 @@ logFC_heatmap <- function(mat, dend){
   return(hm)
 }
 
-make_venn <- function(set1, set2, set3, set4, names, filename){
+arrange_regions <- function(set1, set2, set3, set4, names, filename){
+  # Select meaningful columns from the input data
   tmp <- list(
     set1[,c("ensembl","log2FoldChange")],
     set2[,c("ensembl","log2FoldChange")],
@@ -219,48 +220,147 @@ make_venn <- function(set1, set2, set3, set4, names, filename){
     set4[,c("ensembl","log2FoldChange")]
   )
   names(tmp) <- names
-  venn <- venn.diagram(x = list(tmp[[1]]$ensembl, tmp[[2]]$ensembl, 
-                                tmp[[3]]$ensembl), tmp[[4]]$ensembl,
-                       category.names = c("HaCaT vs C.albi", "HaCaT vs C.para", 
-                                                       "HPV-KER vs C.albi", "HPV-KER vs C.para"),
-                                    filename = paste0(file.path(human.folder, date, plots_dir), "/","venn.png"), 
-                                    output = T,
-                                    
-                                    # Output features
-                                    imagetype="png" ,
-                                    height = 1960 , 
-                                    width = 1960 , 
-                                    resolution = 300,
-                                    compression = "lzw",
-                                    # Circles
-                                    lwd = 2,
-                                    lty = 'solid',
-                                    col = "grey",
-                                    fill = brewer.pal(4, "Dark2"),
-                                    
-                                    # Numbers
-                                    cex = .6,
-                                    fontface = "bold",
-                                    fontfamily = "sans",
-                                    
-                                    # Set names
-                                    cat.cex = 0.6,
-                                    cat.fontface = "bold",
-                                    cat.fontfamily = "sans")
   
-  list <- GOVenn(tmp[[1]], tmp[[2]], tmp[[3]], plot = F)$table
-  list <- lapply(list, rownames_to_column, var = "geneID")
-  list[["A_only"]] <- list[["A_only"]] %>% dplyr::rename(logFC_A = logFC)
-  list[["B_only"]] <- list[["B_only"]] %>% dplyr::rename(logFC_B = logFC)
-  list[["C_only"]] <- list[["C_only"]] %>% dplyr::rename(logFC_C = logFC)
+  # Merge the data frames
+  table <- merge.rec(tmp, by = "ensembl", all = T) %>%
+    setNames(.,c("geneID", names))
   
-  table <- do.call(rbind.fill,rev(list))
-  table <- table %>% dplyr::distinct(geneID, .keep_all = T)
+  # Extract the allocation of each gene
+  regions <- table %>%
+    # Pivot the data frame to long format along the expression values
+    tidyr::pivot_longer(cols = -geneID, names_to = "Region", values_to = "Value") %>%
+    # Filter out missing values
+    dplyr::filter(!is.na(Value)) %>%
+    # Group by geneID and concatenate the regions for genes in intersecting sets
+    dplyr::group_by(geneID) %>%
+    dplyr::summarise(Regions = paste(Region, collapse = "")) %>%
+    dplyr::ungroup() 
   
-  return(list(venn = venn, table = table))
+  # Merge the regions with the table
+  table <- merge(table, regions, by = "geneID")
+  
+  # Calculate the number of genes in each subset
+  regions <- regions %>% 
+    dplyr::group_by(Regions) %>% 
+    dplyr::summarise(Size = n()) %>% 
+    dplyr::pull(Size, name = Regions)
+  
+  return(list(table = table, regions = regions)) 
 }
 
-
+make_venn <- function(expression, size, names = list()){
+  # Create a data frame for plotting the ellipses on the Venn diagram
+  region.matrix <- data.frame(
+    labels = names(names),
+    # Define the coordinates and dimensions of the ellipses: A, B, C, D
+    x0=c(0.35, 0.5, 0.5, 0.65),
+    y0=c(0.47, 0.57, 0.57, 0.47),
+    a=c(0.35, 0.35, 0.35, 0.35),
+    b=c(0.2, 0.15, 0.15, 0.2),
+    angle=c(-10, -10, 10, 10),
+    stringsAsFactors = T)
+    
+  # Create a data frame for plotting the labels on the Venn diagram
+  label.matrix <- matrix(byrow = T, nrow = 15, ncol = 3,
+                         # The labels equal the number of genes in each region
+                         c(size[['B']], 0.35, 0.75,
+                           size[['BC']], 0.5, 0.69,
+                           size[['C']], 0.65, 0.75,
+                           size[['AB']], 0.27, 0.65,
+                           size[['ABC']], 0.4, 0.6,
+                           size[['ABCD']], 0.5, 0.5,
+                           size[['BCD']], 0.6, 0.6,
+                           size[['CD']], 0.73, 0.65,
+                           size[['A']], 0.15, 0.6,
+                           size[['AC']], 0.3, 0.45,
+                           size[['ACD']], 0.4, 0.4,
+                           size[['ABD']], 0.6, 0.4,
+                           size[['BD']], 0.7, 0.45,
+                           size[['D']], 0.85, 0.6,
+                           size[['AD']], 0.5, 0.28))
+  colnames(label.matrix) <- c("label", "x", "y")
+  row.names(label.matrix) <- c('B','BC','C','AB','ABC','ABCD','BCD','CD','A',
+                               'AC','ACD','ABD','BD','D','AD')
+  
+  set.seed(0)
+  # Create a data frame for plotting the genes on the Venn diagram
+  point.matrix <- merge(human.venn$table, label.matrix %>%
+                          as.data.frame() %>% 
+                          tibble::rownames_to_column("Regions"), 
+                        by = "Regions")
+  point.matrix <- point.matrix %>% 
+    rowwise(.) %>% 
+    # Add jitter to the coordinates for better visualization
+    dplyr::mutate(
+      x = rnorm(1, x, sd = 0.015),
+      y = rnorm(1, y, sd = 0.015),
+      # Determine the trend of gene expression
+      trend = dplyr::case_when(
+        all(dplyr::c_across(A:D) > 0, na.rm = T) ~ 'UP',
+        all(dplyr::c_across(A:D) < 0, na.rm = T) ~ 'DOWN',
+        TRUE ~ 'CHANGE'
+      ),
+      trend = as.factor(trend)
+    ) %>% 
+    ungroup(.)
+  
+  # Create the Venn diagram
+  plot <- ggplot() + 
+           # Plot the ellipses
+           ggforce::geom_ellipse(
+             data = region.matrix, # ellipse coordinates
+             aes(x0=x0,y0=y0,a=a,b=b, angle=angle, fill = labels),
+             color = "grey25", linewidth = .8, alpha = .3) + 
+           # Paint the ellipses
+           scale_fill_manual(
+             values = c("A" = "steelblue",
+                        "B" = "salmon",
+                        "C" = "darkred",
+                        "D" = "darkblue"),
+             labels = c(paste("A", names[["A"]], sep = ") "),
+                        paste("B", names[["B"]], sep = ") "),
+                        paste("C", names[["C"]], sep = ") "),
+                        paste("D", names[["D"]], sep = ") ")),
+             guide = guide_legend(title = "Regions",
+                                  order = 1,
+                                  override.aes = list(
+                                    linetype = c(0,0,0,0),
+                                    alpha = 0))) +
+           geom_point(
+             data = point.matrix, # Gene coordinates
+             aes(x = x, y = y, colour = trend),
+             size = 3) +
+           # Paint the genes
+           scale_color_manual(
+             name = "Trend",
+             values = c("UP" = "red",
+                        "DOWN" = "blue",
+                        "CHANGE" = "green"),
+             labels = c("Up-regulated", 
+                        "Down-regulated",
+                        "Opposing changes")) +
+           # Plot the number of genes in each region
+           geom_label(
+             data = label.matrix, # Label coordinates
+             aes(x = x, y = y, label = label),
+             size = 6, alpha = 0.5, fill = 'white', color = 'grey15') + 
+           # Clear the background and axes
+           theme_dendro() +
+           # Increase font size and adjust legend placement
+           theme(text = element_text(size = 16),
+                 legend.key.spacing = unit(.5, 'cm'),
+                 legend.spacing = unit(2, 'cm')) + 
+           # Expand the plot limits
+           expand_limits(x = 0, y = .9) + 
+           # Add region labels
+           annotate('label', x = 0, y = 0.6, size = 8, label = 'A') +
+           annotate('label', x = 0.25, y = 0.85, size = 8, label = 'B') +
+           annotate('label', x = 0.75, y = 0.85, size = 8, label = 'C') + 
+           annotate('label', x = 1, y = 0.6, size = 8, label = 'D') +
+           # Add a title
+           labs(title = "Venn diagram of gene expression regions")
+  return(list(plot = plot, point_matrix = point.matrix))
+}
 
 MA_plotting <- function(x){
   ggplot(x, aes(baseMean, log2FoldChange, colour = padj)) + geom_point(size=1) + 
@@ -270,6 +370,7 @@ MA_plotting <- function(x){
     scale_colour_viridis(direction = -1, trans = "sqrt") + theme_bw() + 
     geom_density_2d(colour = "black", size = 1)
 }
+
 
 vulcan_plotting <- function(x){return(ggplot(data = na.omit(x), 
                                           aes(x = log2FoldChange, y = -log10(pvalue), colour = significance)) + 
@@ -393,41 +494,47 @@ make_FGplot <- function(mydata, type=c("KEGG","GO")){
     if(type == "GO"){
       mydata %>%
         mutate(Description = fct_reorder(Description, GeneRatio)) %>%
-        #group_by(ONTOLOGY) %>%
+        group_by(ONTOLOGY) %>%
         dplyr::slice_head(n = 10) %>%
         ggplot(aes(x = GeneRatio, y = Description, size = as.numeric(Count))) + 
         geom_point(aes(color = pvalue)) + 
-        # facet_grid(ONTOLOGY ~ ., scales = "free",
-        #            labeller = as_labeller(c(
-        #              'BP' = 'Biological processes',
-        #              'MF' = 'Molecular functions',
-        #              'CC' = 'Cellular components'
-        #            ))) +
+        facet_grid(ONTOLOGY ~ ., scales = "free",
+                  labeller = as_labeller(c(
+                    'BP' = 'Biological processes',
+                    'MF' = 'Molecular functions',
+                    'CC' = 'Cellular components'
+                    ))) +
         scale_size(range = c(5,15), limits = limits, breaks =  breaks) +
+        scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) + 
         theme_classic() +
         guides(size = guide_legend(title = "Gene count", order = 2),
                color = guide_colorbar(title = "p-value", order = 1)) + 
         theme(axis.text.x = element_text(size = 14),
               axis.title.x = element_text(size = 14),
-              legend.title = element_text(size = 14),
-              # panel.border = element_rect(colour = "black", fill="transparent",
-              #                             linewidth = 1),
+              axis.text.y = element_text(size = 14),
+              legend.text = element_text(size = 14),
+              panel.border = element_rect(colour = "black", fill="transparent",
+                                          linewidth = 1),
               panel.grid.major = element_line(colour = "grey80", linewidth = .5),
-              legend.text = element_text(size = 14))}
+              strip.text = element_text(size = 14))+
+        labs(y = "", x = "Gene ratio")}
     else{
       mydata %>%
         mutate(Description = fct_reorder(Description, GeneRatio)) %>%
         dplyr::slice_head(n = 10) %>%
-        ggplot(aes(x = GeneRatio, y = Description, size = as.numeric(Count))) + 
+        ggplot(aes(x = GeneRatio, y = Description,
+                   size = as.numeric(Count))) + 
         geom_point(aes(color = pvalue)) + 
         scale_size(range = c(5,15), limits = limits, breaks =  breaks) +
+        scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) + 
         theme_classic() + 
         guides(size = guide_legend(title = "Gene count", order = 2),
                color = guide_colorbar(title = "p-value", order = 1)) + 
         theme(axis.text.x = element_text(size = 14),
               axis.title.x = element_text(size = 14),
-              legend.title = element_text(size = 14),
-              legend.text = element_text(size = 14))}
+              axis.text.y = element_text(size = 14),
+              legend.text = element_text(size = 14)) +
+        labs(y = "", x = "Gene ratio")}
     )
 }
 
@@ -629,3 +736,121 @@ compound_GOplot <-function (data) {
             panel.grid.major = element_line(colour = "grey80"),
             plot.background = element_rect(color = "white")))
 }
+
+# Function to build a phylogenetic tree
+buildTree <- function(df) {
+  # Create a root node
+  root <- Node$new("47608")
+  
+  # Recursive function to add children
+  addChildren <- function(node) {
+    children <- df[df$from == node$name, "to"]
+    for (child in children) {
+      # Add child node with additional information
+      childNode <- node$AddChild(child)
+      addChildren(childNode) # Recursion for any children of the current child
+    }
+  }
+  # Start the tree building process
+  addChildren(root)
+  return(root)
+}
+
+make_spiderbase <- function(df){
+  
+  colnames(df) <- tolower(colnames(df))
+  bg.genes = df$geneid[which(df$panc == T)]
+  bg.count = length(bg.genes)
+  
+  genes = list(
+    ca = df$geneid[which(df$ca11 == T & df$geneid %in% bg.genes)],
+    cp = df$geneid[which(df$cp51 == T & df$geneid %in% bg.genes)]  
+  )
+  
+  counts = lapply(genes, length)
+  
+  zsc = list()
+  sub = list()
+  for(i in names(genes)){
+    sub[[i]] = subset.data.frame(df, df$geneid %in% genes[[i]])
+    
+    value = 0
+    value = sum(ifelse(sub[[i]]$trend == "Signif. up-regulated", 1, -1))
+    
+    zsc[[i]] = value/sqrt(counts[[i]])
+  }
+  
+  ratios = lapply(counts, function(x) round((x/bg.count)*100, digits = 1))
+  
+  return(
+    data.frame(
+      condition = c("CA11","CP51"),
+      genes = sapply(genes, paste, collapse = ", "),
+      count = unlist(counts),
+      geneRation = unlist(ratios),
+      zscore = unlist(zsc)
+    ))
+}
+
+make_circPlot <- function(df){
+  df <- df %>% 
+    dplyr::mutate(GeneRatio = round(GeneRatio, digits = 3),
+                  term = as.factor(term)) %>% 
+    dplyr::group_by(condition, term) %>% 
+    dplyr::slice_head(n = 1) 
+  
+  return(ggplot(df,
+          aes(
+            x = reorder(str_wrap(term, 20), Count),
+            y = Count,
+            fill = zscore,
+            color = zscore
+          )) +
+     geom_bar(
+       position = "dodge2",
+       stat='identity',
+       show.legend = TRUE,
+       alpha = .9
+     ) + 
+     geom_label_repel(
+       data = subset.data.frame(df, Count > 0),
+       aes(label = round(zscore, 2), y = max(Count)/2), direction = "y",
+       fill="white",label.padding = unit(5, "pt"),
+       position=position_dodge(width=0.9)) +
+     scale_fill_gradient(
+       "Activation (z-score)",
+       low = "grey50", high = "darkred", 
+       limits = c(0, 5), breaks = c(0, 1, 2, 3, 4, 5),
+       aesthetics = c("fill","color")
+     ) + 
+     facet_grid(.~condition, drop = T, scales = "free",
+                labeller = as_labeller(
+                  c("CTRL_vs_C.albi_HaCat" = "C.albicans (MOI 1:1) vs HaCat",
+                    "CTRL_vs_C.para_HaCat" = "C.parapsilosis (MOI 5:1) vs HaCat",
+                    "CTRL_vs_C.albi_HPV-KER" = "C.albicans (MOI 1:1) vs HPV-KER",
+                    "CTRL_vs_C.para_HPV-KER" = "C.parapsilosis (MOI 5:1) vs HPV-KER")
+                )) +
+     labs(x = "Gene count") +
+     theme_minimal() + 
+     theme(
+       # Remove axis ticks and text
+       axis.ticks = element_blank(),
+       # Use grey text for the region names
+       line = element_line(color = "grey80", linewidth = 1),
+       axis.title.x =  element_text(color = "grey12", size = 14),
+       axis.title.y = element_blank(),
+       axis.text.y = element_text(color = "grey12", size = 14),
+       axis.text.x = element_text(color = "grey12", size = 12),
+       panel.background = element_rect(fill = "white", color = "white"),
+       #strip parameters
+       strip.clip = "off", 
+       strip.text = element_text(color = "grey12", size = 16),
+       # Move the legend to the bottom
+       legend.position = "bottom",
+       legend.title = element_text(size = 14),
+     ) +
+     scale_y_continuous(expand = expansion(0.1), n.breaks = 5) +
+     coord_radial(clip = "off", expand = T, r_axis_inside = T, direction = -1,
+                  start = -0.95 * pi, end = 0.95 * pi, rotate_angle = T, inner.radius = 0.1))
+}
+
