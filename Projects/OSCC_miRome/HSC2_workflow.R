@@ -6,28 +6,25 @@ folder <- "mRNA"
 if (!dir.exists(folder)) {
   dir.create(folder) # create the main results folder
 }
-date <- format(Sys.Date(), "%Y-%m-%d") # get the current date
-if (!dir.exists(file.path(folder,date))) {
-  dir.create(file.path(folder, date)) # create the dated results folder
-}
 
 # Create the sub folders for: results, data, and pictures
 #data folder
 data_dir <- "data"
 if (!dir.exists(file.path(folder,data_dir))) {
   dir.create(file.path(folder,data_dir)) # create the data folder
-}
+} 
 
+# Create the dated results folder
 #plots directory
 plots_dir <- "plots"
-if (!dir.exists(file.path(folder, date, plots_dir))) {
-  dir.create(file.path(folder, date, plots_dir)) # create the plots folder
-}
-
 #results directory
-results_dir <- "results" 
-if (!dir.exists(file.path(folder, date, results_dir))) {
+results_dir <- "results"
+# get the current date
+date <- format(Sys.Date(), "%Y-%m-%d")
+if (!dir.exists(file.path(folder,date))) {
+  dir.create(file.path(folder, date)) # create the dated results folder
   dir.create(file.path(folder, date, results_dir)) # create the results folder
+  dir.create(file.path(folder, date, plots_dir)) # create the plots folder
 }
 
 #######################################
@@ -43,33 +40,33 @@ if (exists("readcounts") == F) {
   mrna.path <- choose.dir(getwd(), "Select the directory containing the count files")
   mrna.files <- list.files(mrna.path, pattern = "counts.txt$", full.names = T)
   file.copy(from = mrna.files, to = file.path(folder, data_dir))
+  
+  mrna.reads <- lapply(list.files(file.path(folder, data_dir), 
+                                  pattern = "counts.txt$",
+                                  full.names = T), 
+                       # read csv: with header, tab-delimited, skip first row =>
+                       # contains quantification parameters
+                       read.csv, header = T, sep = "\t", skip = 1)
+  
+  mrna.counts <- lapply(mrna.reads, 
+                        function(x) { x  %>%
+                            select(c(1,7)) %>%
+                            setNames(c("Geneid","Counts"))}
+  )
+  
+  mrna.counts <- merge.rec(mrna.counts, by = "Geneid",  all = T, suffixes = c("",""))
+  file.names <- list.files(file.path(folder, data_dir),
+                           pattern = "counts.txt$", full.names = F)
+  
+  mrna.counts <- mrna.counts %>%
+    # set the gene ID as row names
+    tibble::column_to_rownames("Geneid") %>% 
+    # clean up the column names
+    setNames(str_remove(file.names, "_counts.txt"))
+  
+  write.table(mrna.counts, paste(data_dir,"readcounts.csv", sep = "/"), 
+              sep =",", na = "NA", dec = ".", row.names = T, col.names = T)
 }
-
-mrna.reads <- lapply(list.files(file.path(folder, data_dir), 
-                                pattern = "counts.txt$",
-                                full.names = T), 
-                     # read csv: with header, tab-delimited, skip first row (info)
-                     read.csv, header = T, sep = "\t", skip = 1)
-
-mrna.counts <- lapply(mrna.reads, 
-                      function(x) { x  %>%
-                          select(c(1,7)) %>%
-                          setNames(c("Geneid","Counts"))}
-                      )
-
-mrna.counts <- merge.rec(mrna.counts, by = "Geneid",  all = T, suffixes = c("",""))
-file.names <- list.files(file.path(folder, data_dir),
-                         pattern = "counts.txt$", full.names = F)
-
-
-mrna.counts <- mrna.counts %>%
-  # set the gene ID as row names
-  tibble::column_to_rownames("Geneid") %>% 
-  # clean up the column names
-  setNames(str_remove(file.names, "_counts.txt"))
-
-write.table(mrna.counts, paste(data_dir,"readcounts.csv", sep = "/"), 
-            sep =",", na = "NA", dec = ".", row.names = T, col.names = T)
 
 ##########################
 # 4.) Ready count tables #
@@ -357,132 +354,112 @@ got_terms <- msigdbr_df %>%
 hallmark_sets <- msigdbr_df %>%
   dplyr::filter(gs_cat == "H")  # only hallmark gene sets
   
-#GSEA against the KEGG pathway datasets
-Ca11_1h.GSEA <- list()
-Ca11_1h.GSEA$KEGG <- gsea_results(Ca11_6h.entrez$interest, kegg_pathways)
-Ca11_1h.GSEA$GO <- gsea_results(Ca11_6h.entrez$interest, go_terms) 
-Ca11_1h.GSEA$MSigDB <- gsea_results(Ca11_6h.entrez$interest, hallmark_sets) 
+## Ca11 1h - no term enriched under specific pvalueCutoff
+#####
+# Ca11_1h.GSEA <- list()
+# Ca11_1h.GSEA$KEGG <- gsea_results(Ca11_1h.entrez$interest, kegg_pathways)
+# Ca11_1h.GSEA$GO <- gsea_results(Ca11_1h.entrez$interest, go_terms) 
+# Ca11_1h.GSEA$MSigDB <- gsea_results(Ca11_1h.entrez$interest, hallmark_sets) 
+# 
+# Ca11_1h.GSEA.df <- list(
+#   kegg = Ca11_1h.GSEA$KEGG$gsea_df, # GSEA against the KEGG pathway datasets
+#   GO = Ca11_1h.GSEA$GO$gsea_df,     # GSEA against the GO term datasets
+#   hallmark = Ca11_1h.GSEA$MSigDB$gsea_df # GSEA against the MSigDB halmark sets
+# )
+# 
+# # save files to excel
+# sapply(names(Ca11_1h.GSEA.df), function(x){
+#   openxlsx::write.xlsx(Ca11_1h.GSEA.df[[x]], 
+#                        file.path(folder, date, results_dir, 
+#                                  paste0("Ca11_1h_GSEA_",x,".xlsx")),
+#                        rowNames = T)
+# })
+#####
+## Ca11 6h
+Ca11_6h.GSEA <- list()
+Ca11_6h.GSEA$KEGG <- gsea_results(Ca11_6h.entrez$interest, kegg_pathways)
+Ca11_6h.GSEA$GO <- gsea_results(Ca11_6h.entrez$interest, go_terms)
+Ca11_6h.GSEA$MSigDB <- gsea_results(Ca11_6h.entrez$interest, hallmark_sets)
 
-# (Ca11_1h_KEGG_GSEAplot <- make_gseaplot(Ca11_1h_KEGG_GSEA$gsea_df))
-# ggsave(paste(plots_dir,"/Ca11_1h_KEGG_GSEA.png"), 
-#        plot = Ca11_1h_KEGG_GSEAplot,
-#        width = 10, height = 8, units = 'in')
-# openxlsx::write.xlsx(Ca11_1h_KEGG_GSEA$gsea_df, 
-#                      paste(results_dir, "Ca11_1h_KEGG_GSEA.xlsx", sep = "/"))
+Ca11_6h.GSEA.df <- list(
+  kegg = Ca11_6h.GSEA$KEGG$gsea_df, # GSEA against the KEGG pathway datasets
+  GO = Ca11_6h.GSEA$GO$gsea_df,     # GSEA against the GO term datasets
+  hallmark = Ca11_6h.GSEA$MSigDB$gsea_df # GSEA against the MSigDB halmark sets
+)
 
-# 0 hits
+# save files to excel
+sapply(names(Ca11_6h.GSEA.df), function(x){
+  openxlsx::write.xlsx(Ca11_6h.GSEA.df[[x]], 
+                       file.path(folder, date, results_dir, 
+                                 paste0("Ca11_6h_GSEA_",x,".xlsx")),
+                       rowNames = T)
+})
 
-Ca11_6h_KEGG_GSEA <- gsea_results(Ca11_6h.list$df, kegg_pathways)
-(Ca11_6h_KEGG_GSEAplot <- make_gseaplot(Ca11_6h_KEGG_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Ca11_6h_KEGG_GSEA.png"), 
-       plot = Ca11_6h_KEGG_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Ca11_6h_KEGG_GSEA$gsea_df, 
-                     paste(results_dir, "Ca11_6h_KEGG_GSEA.xlsx", sep = "/"))
-
-Cp11_6h_KEGG_GSEA <- gsea_results(Cp11_6h.list$df, kegg_pathways)
-(Cp11_6h_KEGG_GSEAplot <- make_gseaplot(Cp11_6h_KEGG_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Cp11_6h_KEGG_GSEA.png"), 
-       plot = Cp11_6h_KEGG_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Cp11_6h_KEGG_GSEA$gsea_df, 
-                     paste(results_dir, "Cp11_6h_KEGG_GSEA.xlsx", sep = "/"))
-
-Cp51_6h_KEGG_GSEA <- gsea_results(Cp51_6h.list$df, kegg_pathways)
-(Cp51_6h_KEGG_GSEAplot <- make_gseaplot(Cp51_6h_KEGG_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Cp51_6h_KEGG_GSEA.png"), 
-       plot = Cp51_6h_KEGG_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Cp51_6h_KEGG_GSEA$gsea_df, 
-                     paste(results_dir, "Cp51_6h_KEGG_GSEA.xlsx", sep = "/"))
-
-#GSEA against the GO terms
-Ca11_1h_GO_GSEA <- gsea_results(Ca11_1h.list$df, go_terms) 
-# (Ca11_1h_GO_GSEAplot <- make_gseaplot(Ca11_1h_GO_GSEA$gsea_df))
-# ggsave(paste(plots_dir,"/Ca11_1h_GO_GSEA.png"), 
-#        plot = Ca11_1h_GO_GSEAplot,
-#        width = 10, height = 8, units = 'in')
-# openxlsx::write.xlsx(Ca11_1h_GO_GSEA$gsea_df, 
-#                      paste(results_dir, "Ca11_1h_GO_GSEA.xlsx", sep = "/"))
-
-# 0 hits
-
-Ca11_6h_GO_GSEA <- gsea_results(Ca11_6h.list$df, go_terms)
-(Ca11_6h_GO_GSEAplot <- make_gseaplot(Ca11_6h_GO_GSEA$gsea_df, type = 'GO'))
-ggsave(paste(plots_dir,"/Ca11_6h_GO_GSEA.png"), 
-       plot = Ca11_6h_GO_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Ca11_6h_GO_GSEA$gsea_df, 
-                     paste(results_dir, "Ca11_6h_GO_GSEA.xlsx", sep = "/"))
-
-Cp11_6h_GO_GSEA <- gsea_results(Cp11_6h.list$df, go_terms)
-(Cp11_6h_GO_GSEAplot <- make_gseaplot(Cp11_6h_GO_GSEA$gsea_df,type = 'GO'))
-ggsave(paste(plots_dir,"/Cp11_6h_GO_GSEA.png"), 
-       plot = Cp11_6h_GO_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Cp11_6h_GO_GSEA$gsea_df, 
-                     paste(results_dir, "Cp11_6h_GO_GSEA.xlsx", sep = "/"))
-
-Cp51_6h_GO_GSEA <- gsea_results(Cp51_6h.list$df, go_terms)
-(Cp51_6h_GO_GSEAplot <- make_gseaplot(Cp51_6h_GO_GSEA$gsea_df, type = 'GO'))
-ggsave(paste(plots_dir,"/Cp51_6h_GO_GSEA.png"), 
-       plot = Cp51_6h_GO_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Cp51_6h_GO_GSEA$gsea_df, 
-                     paste(results_dir, "Cp51_6h_GO_GSEA.xlsx", sep = "/"))
-
-#GSEA against the Hallmark sets
-Ca11_1h_hallmark_GSEA <- gsea_results(Ca11_1h.list$df, hallmark_sets) 
-(Ca11_1h_hallmark_GSEAplot <- make_gseaplot(Ca11_1h_hallmark_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Ca11_1h_hallmark_GSEA.png"), 
-       plot = Ca11_1h_hallmark_GSEAplot,
-       width = 10, height = 8, units = 'in')
-openxlsx::write.xlsx(Ca11_1h_hallmark_GSEA$gsea_df, 
-                     paste(results_dir, "Ca11_1h_hallmark_GSEA.xlsx", sep = "/"))
-
-Ca11_6h_hallmark_GSEA <- gsea_results(Ca11_6h.list$df, hallmark_sets)
-(Ca11_6h_hallmark_GSEAplot <- make_gseaplot(Ca11_6h_hallmark_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Ca11_6h_hallmark_GSEA.png"), 
-       plot = Ca11_6h_hallmark_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Ca11_6h_hallmark_GSEA$gsea_df, 
-                     paste(results_dir, "Ca11_6h_hallmark_GSEA.xlsx", sep = "/"))
-
-Cp11_6h_hallmark_GSEA <- gsea_results(Cp11_6h.list$df, hallmark_sets)
-(Cp11_6h_hallmark_GSEAplot <- make_gseaplot(Cp11_6h_hallmark_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Cp11_6h_hallmark_GSEA.png"), 
-       plot = Cp11_6h_hallmark_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Cp11_6h_hallmark_GSEA$gsea_df, 
-                     paste(results_dir, "Cp11_6h_hallmark_GSEA.xlsx", sep = "/"))
-
-Cp51_6h_hallmark_GSEA <- gsea_results(Cp51_6h.list$df, hallmark_sets)
-(Cp51_6h_hallmark_GSEAplot <- make_gseaplot(Cp51_6h_hallmark_GSEA$gsea_df))
-ggsave(paste(plots_dir,"/Cp51_6h_hallmark_GSEA.png"), 
-       plot = Cp51_6h_hallmark_GSEAplot,
-       width = 12, height = 8, units = 'in')
-openxlsx::write.xlsx(Cp51_6h_hallmark_GSEA$gsea_df, 
-                     paste(results_dir, "Cp51_6h_hallmark_GSEA.xlsx", sep = "/"))
-
+## Cp11 6h - no terms were enriched under specific pvalueCutoff
+#####
+# Cp11_6h.GSEA <- list()
+# Cp11_6h.GSEA$KEGG <- gsea_results(Cp11_6h.entrez$interest, kegg_pathways)
+# Cp11_6h.GSEA$GO <- gsea_results(Cp11_6h.entrez$interest, go_terms)
+# Cp11_6h.GSEA$MSigDB <- gsea_results(Cp11_6h.entrez$interest, hallmark_sets)
+# 
+# Cp11_6h.GSEA.df <- list(
+#   kegg = Cp11_6h.GSEA$KEGG$gsea_df, # GSEA against the KEGG pathway datasets
+#   GO = Cp11_6h.GSEA$GO$gsea_df,     # GSEA against the GO term datasets
+#   hallmark = Cp11_6h.GSEA$MSigDB$gsea_df # GSEA against the MSigDB halmark sets
+# )
+# 
+# # save files to excel
+# sapply(names(Cp11_6h.GSEA.df), function(x){
+#   openxlsx::write.xlsx(Cp11_6h.GSEA.df[[x]], 
+#                        file.path(folder, date, results_dir, 
+#                                  paste0("Cp11_6h_GSEA_",x,".xlsx")),
+#                        rowNames = T)
+# })
+#####
+## Cp51 6h - no terms were enriched under specific pvalueCutoff
+#####
+# Cp51_6h.GSEA <- list()
+# Cp51_6h.GSEA$KEGG <- gsea_results(Cp51_6h.entrez$interest, kegg_pathways)
+# Cp51_6h.GSEA$GO <- gsea_results(Cp51_6h.entrez$interest, go_terms)
+# Cp51_6h.GSEA$MSigDB <- gsea_results(Cp51_6h.entrez$interest, hallmark_sets)
+# 
+# Cp51_6h.GSEA.df <- list(
+#   kegg = Cp51_6h.GSEA$KEGG$gsea_df, # GSEA against the KEGG pathway datasets
+#   GO = Cp51_6h.GSEA$GO$gsea_df,     # GSEA against the GO term datasets
+#   hallmark = Cp51_6h.GSEA$MSigDB$gsea_df # GSEA against the MSigDB halmark sets
+# )
+# 
+# # save files to excel
+# sapply(names(Cp51_6h.GSEA.df), function(x){
+#   openxlsx::write.xlsx(Cp51_6h.GSEA.df[[x]], 
+#                        file.path(folder, date, results_dir, 
+#                                  paste0("Cp51_6h_GSEA_",x,".xlsx")),
+#                        rowNames = T)
+# })
 
 ##############################################
 # 10.) Overlap with cancer hallmark genesets #
 ##############################################
-file.copy(from="D:/Reni/HSC2_mRNA-seq/pancancer_panel.csv", to=data_dir, 
-          overwrite = TRUE, recursive = FALSE, 
-          copy.mode = TRUE)
+if (exists("pancancer.genes") == F) {
+  pancancer.path <- choose.files(getwd(), "Select the directory containing the count files",
+                                 multi = F)
+  file.copy(from = pancancer.path, to = file.path(folder, data_dir),
+            overwrite = TRUE, recursive = FALSE, copy.mode = TRUE)
+}
 
-pancancer.path <- file.path(data_dir,"pancancer_panel.csv")
-
-pancancer.file <- require_file(pancancer.path, header = T, na.strings = NA)
-pancancer.file <- pancancer.file %>%
+pancancer.file <- list.files(file.path(folder, data_dir), pattern = "cancer",
+                             full.names = F)
+  
+pancancer.df <- require_file(file.path(folder, data_dir, pancancer.file),
+                             header = T, na.strings = NA)
+pancancer.df <- pancancer.df %>%
   dplyr::mutate(across(where(is.character) & !c(Genes), ~ifelse(.x == '+',T,F)))
 
-pancancer.category <- colnames(pancancer.file)[-1]
+pancancer.category <- colnames(pancancer.df)[-1]
 
 pancancer.genes <- list()
 for(i in pancancer.category){
-  pancancer.genes[[i]] <- pancancer.file %>%
+  pancancer.genes[[i]] <- pancancer.df %>%
     .[which(.[,i] == T),] %>%
     dplyr::select(Genes) %>%
     dplyr::rename("geneID" = Genes) %>%
@@ -490,174 +467,95 @@ for(i in pancancer.category){
 }
 
 
-
-
-HSC2_pancancer.df <- lapply(pancancer.genes, function(x){
-  return(merge.rec(list(Ca11_6h.list$sig_df, Cp51_6h.list$sig_df, x), 
+pancancer.res <- lapply(pancancer.genes, function(x){
+  return(merge.rec(list(Ca11_6h.res$sig_df, Cp51_6h.res$sig_df, x), 
                    by = "geneID", all = T, suffixes=c(".CA11",".CP51")))
 })
 
-HSC2_pancancer.upset <- lapply(HSC2_pancancer.df, function(x) {x %>% 
-    dplyr::select(c(1,8,16,18))}
-)
-
-HSC2_pancancer.upset <- lapply(HSC2_pancancer.upset, function(x) {
-  x %>%
+pancancer.upset <- lapply(pancancer.res, function(x) {
+  x %>% 
+    # select the geneID and the significance columns
+    dplyr::select(c(1,8,16,18)) %>% 
+    # add columns for regions
     dplyr::mutate(CA11 = ifelse(is.na(significance.CA11), FALSE, TRUE)) %>%
     dplyr::mutate(CP51 = ifelse(is.na(significance.CP51), FALSE, TRUE)) %>%
     dplyr::mutate(PANC = ifelse(is.na(PANC), FALSE, TRUE)) %>%
     relocate(where(is.logical), .before = where(is.character)) %>%
+    # add columns for trends in expression changes
     dplyr::mutate(Trend = case_when(
       significance.CA11 == 'Signif. down-regulated' | significance.CP51 == 'Signif. down-regulated' ~ 'Signif. down-regulated',
       significance.CA11 == 'Signif. up-regulated' | significance.CP51 == 'Signif. up-regulated' ~ 'Signif. up-regulated',
       significance.CA11 == 'Signif. down-regulated' & significance.CP51 == 'Signif. up-regulated' |
         significance.CA11 == 'Signif. up-regulated' & significance.CP51 == 'Signif. down-regulated' ~ 'Changed regulation',
       TRUE ~ NA
-      ),
-      Trend = as.factor(Trend)) %>%
-    dplyr::select(-c(5,6))
+    ),
+    Trend = as.factor(Trend)) %>%
+    # remove significance columns
+    dplyr::select(-c(5,6))}
+)
+
+pancancer.arranged <- list()
+for(i in names(pancancer.upset)){
+  pancancer.arranged[[i]] <- arrange_venn(pancancer.upset[[i]],
+                                               c("CA11", "CP51", "PANC"),
+                                          extract_regions = T) %>% 
+    dplyr::arrange(., region)
+}
+
+
+##############################################
+# 10.) Venn diagrams with cancer hallmark    #
+##############################################
+
+# Create the venn diagrams' base data frames
+
+pancancer.vennbase <- list()
+for(i in names(pancancer.arranged)){
+  pancancer.vennbase[[i]] <- make_upsetvennbase(arranged = pancancer.arranged[[i]],
+                                                df = pancancer.upset[[i]])
+}
+
+# Create the venn diagrams
+pancancer.labels <- c(
+  "Angiogenesis" = "Angiogenic genes",
+  "Cancer.Metabolism" = "Metabolic genes",
+  "ECM.Layers" = "ECM layers",
+  "ECM.Remodeling" = "ECM remodeling",
+  "EMT" = "Epithelial-mesenchymal transition",
+  "Hypoxia" = "Hypoxia-related genes",             
+  "Metastasis" = "Metastatic genes",
+  "Transcription.Factor" = "Tumor transcription factors (TFs)",
+  "Tumor.Growth" = "Tumor growth",
+  "Tumor.Invasion" = "Tumor invasion"
+)
+
+pancancer.venn <- list()
+for(i in names(pancancer.vennbase)){
+  pancancer.venn[[i]] <- make_upsetvenn(data = pancancer.vennbase[[i]],
+                                        sets = c("CA11", "CP51", "PANC"),
+                                        labels = c(
+                                          "C.albicans (MOI 1:1)",
+                                          "C.parapsilosis (MOI 5:1)",
+                                          pancancer.labels[i]))
+}
+
+# Save the venn diagrams
+sapply(names(pancancer.venn), function(x){
+  ggsave(file.path(folder, date, plots_dir, paste0("HSC2_vs_",x,".png")),
+         plot = pancancer.venn[[x]], width = 16, height = 10, units = 'in')
 })
 
 
-HSC2_pancancer.arranged <- list()
-for(i in names(HSC2_pancancer.upset)){
-  HSC2_pancancer.arranged[[i]] <- arrange_venn(HSC2_pancancer.upset[[i]], c("CA11", "CP51", "PANC"),
-                                          extract_regions = T)
-}
-HSC2_pancancer.arranged <- lapply(HSC2_pancancer.arranged, function(x) {
-  x %>% dplyr::arrange(., region)})
-
-#angiogenesis
-
-HSC2_Angiogenesis.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Angiogenesis,
-                                            df = HSC2_pancancer.upset$Angiogenesis)
-(HSC2_Angiogenesis.plot <- make_upsetvenn(data = HSC2_Angiogenesis.vennbase,
-                                     sets = c("CA11", "CP51", "PANC"),
-                                     labels = c("C.albicans (MOI 1:1)", "C.parapsilosis (MOI 5:1)", "Angiogenic genes")))
 ggsave(paste(plots_dir,"/HSC2_vs_Angiogenesis.png"), plot = HSC2_Angiogenesis.plot,
        width = 16, height = 10, units = 'in')
-# Angiogenesis_genes <- Angiogenesis_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
 
-#cancer metabolism
-HSC2_Cancer_metabolism.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Cancer.Metabolism,
-                                                 df = HSC2_pancancer.upset$Cancer.Metabolism)
-(HSC2_Cancer_metabolism.plot <- make_upsetvenn(data = HSC2_Cancer_metabolism.vennbase,
-                                          sets = c("CA11", "CP51", "PANC"),
-                                          labels = c("C.albicans (MOI 1:1)",
-                                                     "C.parapsilosis (MOI 5:1)",
-                                                     "Metabolic genes")))
-ggsave(paste(plots_dir,"/HSC2_vs_Cancer_metabolism.png"),
-       plot = HSC2_Cancer_metabolism.plot,
-       width = 16, height = 10, units = 'in')
-# Metabolism_genes <- Cancer_metabolism_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#ECM remodeling 
-HSC2_ECM_remodeling.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$ECM.Remodeling,
-                                              df = HSC2_pancancer.upset$ECM.Remodeling)
-(HSC2_ECM_remodeling.plot <- make_upsetvenn(data = HSC2_ECM_remodeling.vennbase,
-                                       sets = c("CA11", "CP51", "PANC"),
-                                       labels = c("C.albicans (MOI 1:1)",
-                                                  "C.parapsilosis (MOI 5:1)",
-                                                  "ECM remodeling")))
-ggsave(paste(plots_dir,"/HSC2_vs_ECM_remodeling.png"),
-       plot = HSC2_ECM_remodeling.plot,
-       width = 16, height = 10, units = 'in')
-# ECM_remodeling_genes <- ECM_remodeling_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#Epithelial-to-mesenchymal transition 
-HSC2_EMT.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$EMT,
-                                   df = HSC2_pancancer.upset$EMT)
-(HSC2_EMT.plot <- make_upsetvenn(data = HSC2_EMT.vennbase,
-                            sets = c("CA11", "CP51", "PANC"),
-                            labels = c("C.albicans (MOI 1:1)",
-                                       "C.parapsilosis (MOI 5:1)",
-                                       "Epithelial-Mesechymal transition")))
-ggsave(paste(plots_dir,"/HSC2_vs_EMT.png"), plot = HSC2_EMT.plot,
-       width = 16, height = 10, units = 'in')
-# EMT_genes <- EMT_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#Hypoxia
-HSC2_Hypoxia.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Hypoxia,
-                                       df = HSC2_pancancer.upset$Hypoxia)
-(HSC2_Hypoxia.plot <- make_upsetvenn(data = HSC2_Hypoxia.vennbase,
-                                sets = c("CA11", "CP51", "PANC"),
-                                labels = c("C.albicans (MOI 1:1)",
-                                           "C.parapsilosis (MOI 5:1)",
-                                           "Hypoxia-related genes")))
-
-ggsave(paste(plots_dir,"/HSC2_vs_Hypoxia.png"), plot = HSC2_Hypoxia.plot,
-       width = 16, height = 10, units = 'in')
-# Hypoxia_genes <- Hypoxia_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#Metastasis
-HSC2_Metastasis.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Metastasis,
-                                          df = HSC2_pancancer.upset$Metastasis)
-(HSC2_Metastasis.plot <- make_upsetvenn(data = HSC2_Metastasis.vennbase,
-                                   sets = c("CA11", "CP51", "PANC"),
-                                   labels = c("C.albicans (MOI 1:1)",
-                                              "C.parapsilosis (MOI 5:1)",
-                                              "Metastatic genes")))
-
-ggsave(paste(plots_dir,"/HSC2_vs_Metastasis.png"), plot = HSC2_Metastasis.plot,
-       width = 16, height = 10, units = 'in')
-# Metastasis_genes <- Metastasis_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#Transcription
-HSC2_Transcription.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Transcription.Factor,
-                                             df = HSC2_pancancer.upset$Transcription.Factor)
-(HSC2_Transcription.plot <- make_upsetvenn(data = HSC2_Transcription.vennbase,
-                                      sets = c("CA11", "CP51", "PANC"),
-                                      labels = c("C.albicans (MOI 1:1)",
-                                                 "C.parapsilosis (MOI 5:1)",
-                                                 "Tumor transcription factors (TFs)")))
-
-ggsave(paste(plots_dir,"/HSC2_vs_Transcription.png"), plot = HSC2_Transcription.plot,
-       width = 16, height = 10, units = 'in')
-# Cancer_TF_genes <- Transcription_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#Tumor growth
-HSC2_Tumor_growth.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Tumor.Growth,
-                                            df = HSC2_pancancer.upset$Tumor.Growth)
-(HSC2_Tumor_growth.plot <- make_upsetvenn(data = HSC2_Tumor_growth.vennbase,
-                                     sets = c("CA11", "CP51", "PANC"),
-                                     labels = c("C.albicans (MOI 1:1)",
-                                                "C.parapsilosis (MOI 5:1)",
-                                                "Tumor growth")))
-
-ggsave(paste(plots_dir,"/HSC2_vs_Tumor_growth.png"), plot = HSC2_Tumor_growth.plot,
-       width = 16, height = 10, units = 'in')
-# Tumor_growth_genes <- Tumor_growth_vennbase %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
-
-#Tumor invasion
-HSC2_Tumor_invasion.vennbase <- make_upsetvennbase(arranged = HSC2_pancancer.arranged$Tumor.Invasion,
-                                          df = HSC2_pancancer.upset$Tumor.Invasion)
-(HSC2_Tumor_invasion.plot <- make_upsetvenn(data = HSC2_Tumor_invasion.vennbase,
-                                       sets = c("CA11", "CP51", "PANC"),
-                                       labels = c("C.albicans (MOI 1:1)",
-                                                  "C.parapsilosis (MOI 5:1)",
-                                                  "Tumor invasion")))
-
-ggsave(paste(plots_dir,"/HSC2_vs_Tumor_invasion.png"), plot = HSC2_Tumor_invasion.plot,
-       width = 16, height = 10, units = 'in')
-# Tumor_invasion_genes <- Tumor_invasion_venn %>%
-#   dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
-#   dplyr::pull(geneID)
+# Extract the geneIDs from the venn diagrams' subsets
+HSC2_vs_pancancer <- list()
+for(i in names(pancancer.vennbase)){
+  HSC2_vs_pancancer[[i]] <- pancancer.vennbase[[i]] %>%
+    dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
+    dplyr::pull(geneID, name = region)
+}
 
 ##############################################
 # 11.) Compare C.albi & C.para cancer sets   #
@@ -667,19 +565,21 @@ ggsave(paste(plots_dir,"/HSC2_vs_Tumor_invasion.png"), plot = HSC2_Tumor_invasio
 # [5] "EMT"                  "Hypoxia"              "Metastasis"           "Transcription.Factor"
 # [9] "Tumor.Growth"         "Tumor.Invasion" 
 
-HSC2_pancancer.spider <- lapply(HSC2_pancancer.upset, make_spiderbase)
+# Calculate gene ratio and activation z-score
+pancancer.spider <- lapply(pancancer.upset, make_spiderbase)
 
-#gene ration
-HSC2_pancancer.circ <- lapply(names(HSC2_pancancer.spider), function(x){
-  HSC2_pancancer.spider[[x]] %>% 
+# Create data frame for the spider plot
+pancancer.circ <- lapply(names(pancancer.spider), function(x){
+  pancancer.spider[[x]] %>% 
     dplyr::mutate(category = as.character(x),
-                  category = as.factor(str_replace_all(category,"\\."," "))) %>%
+                  category = as.factor(str_replace_all(category,"[.]"," "))) %>%
     dplyr::select(c(category, condition, geneRation, zscore))
   })
-  
-HSC2_pancancer.circ <- do.call(rbind.fill, HSC2_pancancer.circ)
-(HSC2_pancancer.circ_plot <- make_circPlot(HSC2_pancancer.circ))
-ggsave(paste(plots_dir,"/Ca_vs_Cp_Pancancer_activation.png"), plot = HSC2_pancancer.circ_plot,
-       width = 24, height = 14, units = 'in')
+pancancer.circ <- do.call(rbind.fill, pancancer.circ)
+
+(pancancer.circ_plot <- make_circPlot(pancancer.circ))
+ggsave(file.path(folder, date, plots_dir, "pancancer_circplot.png"), 
+       plot = pancancer.circ_plot, width = 17, height = 10, units = 'in')
+
 
 

@@ -5,6 +5,7 @@ condition_palette <- c("ctrl" = "#869B5B",
                        "CP51"="#00A4C0")
 regulation_palette <- c("Signif. up-regulated" = "#841f27",
                         "Signif. down-regulated" = "#000f64")
+
 ###############################
 # Load files for the analysis #
 ###############################
@@ -64,7 +65,8 @@ get_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, pval_tr
   return(list(df = df, sig_df = sig_df))
 }
 
-miR_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, fdr_treshold){
+miR_results <- function(dds, contrast = NULL, name = NULL, 
+                        lfc_treshold, fdr_treshold, tissue){
   res <- results(dds, contrast = contrast, name = name,
                  independentFiltering = T, pAdjustMethod = "BH", alpha = 0.05)
   fdr <- fdrtool(res$stat, statistic = "normal", plot = F)
@@ -81,7 +83,8 @@ miR_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, fdr_tre
                                                     padj < fdr_treshold ~ 'Signif. down-regulated',
                                                   log2FoldChange > lfc_treshold & 
                                                     padj < fdr_treshold ~ 'Signif. up-regulated',
-                                                  T ~ 'NS'))
+                                                  T ~ 'NS')) %>% 
+  dplyr::left_join(tissue, by = c("miRname" = "miRname"))
   
   sig_df <- df %>%
     dplyr::filter(significance == 'Signif. down-regulated' | 
@@ -120,31 +123,68 @@ diffexp_GEO <- function(expr, design){
 }
 
 
-get_CategoryExpressionPlot <- function(results,sig_log2FC, sig_pval, targets, labels = T){
-  subset <- subset.data.frame(results, subset = geneID %in% names(targets)) %>%
-    dplyr::mutate(pairs = targets)
+get_CategoryExpressionPlot <- function(results, sig_log2FC, sig_pval, targets,
+                                       labels = c("predicted", "validated")){
+  subsets <- lapply(targets, function(x) {
+    x %>% 
+      dplyr::group_by(genesymbol) %>%
+      dplyr::arrange(desc(baseMean.miR)) %>% 
+      dplyr::distinct(genesymbol, .keep_all = T) %>%
+      dplyr::rowwise() %>% 
+      dplyr::mutate(pairs = paste0(genesymbol, " [", miRname, "]")) %>% 
+      dplyr::select(genesymbol, pairs)
+    })
   
-  return(ggplot(data = na.omit(results)) 
-         + geom_point(mapping = aes(x = log2FoldChange, y = -log10(pvalue), 
-                                    colour = significance), size = 2.5) 
-         + geom_point(data = subset, mapping = aes(x = log2FoldChange, y = -log10(pvalue)),
-                      size = 2.5, fill = "transparent", colour = I (alpha ("yellow", 0.6) )) 
-         + scale_color_manual(values = c("Signif. down-regulated" = "#000f64", 
-                                         "Signif. up-regulated" = "#841f27")) 
-         + labs( x = expression(paste(log[2], 'FoldChange')),
-                 y = expression(paste(log[10], italic('P')))) 
-         + theme(axis.title = element_text(size = 14), 
-                 axis.text = element_text(size = 14), 
-                 legend.position = 'none') 
-         + coord_cartesian(ylim = c(0, -log10(min(results$pvalue))))
-         + geom_vline(xintercept = c(-(sig_log2FC), sig_log2FC), linetype = 'dotted', size = 1) 
-         + geom_hline(yintercept = -log10(sig_pval), linetype = 'dotted', size = 1) 
-         + if(labels == T ){geom_label_repel(data = subset, aes(x = log2FoldChange, y = -log10(pvalue)),
-                            colour = 'black', position = 'identity', 
-                            show.legend = F, label.padding = .5, direction = "both",
-                            label = paste(subset$pairs))}
-         )
+  point.data <- dplyr::inner_join(results, subsets[["predicted"]], 
+                                  by = c("geneID" = "genesymbol"),
+                                  multiple = "first")
   
+  label.data <- dplyr::inner_join(results, subsets[["validated"]], 
+                                  by = c("geneID" = "genesymbol"),
+                                  multiple = "first")
+  
+  plot <- ggplot(data = na.omit(results), 
+         aes(x = log2FoldChange, 
+             y = -log10(pvalue), 
+             colour = significance)) +
+    geom_point(mapping = aes(), inherit.aes = T, size = 2.5) +
+    geom_point(data = point.data,
+               position = "identity",
+               size = 2.5, fill = "transparent",
+               colour = I (alpha ("yellow", 0.6))) + 
+    scale_color_manual(values = c(
+      "NS" = "#c1c1c1",
+      "Log10P" = '#363636',
+      "Log2FoldChange" = '#767676',
+      "Signif. up-regulated" = '#841f27',
+      "Signif. down-regulated" = '#000f64'
+    )) + 
+    labs(x = expression(paste(log[2], 'FoldChange')),
+         y = expression(paste(log[10], italic('P')))) + 
+    theme(axis.title = element_text(size = 14), 
+          axis.text = element_text(size = 14), 
+          legend.position = 'none')  + 
+    scale_x_continuous(expand = expansion(0.2)) + 
+    geom_vline(xintercept = c(-1.5, 1.5), 
+               linetype = 'dotted', size = 1) + 
+    geom_hline(yintercept = -log10(0.05), 
+               linetype = 'dotted', size = 1)
+  
+  if (labels == "predicted") {
+    plot <- plot +
+      geom_label_repel(
+        data = point.data, hjust = .5, vjust = .5, 
+        colour = 'black', position = 'identity', 
+        show.legend = F, label = point.data[,"pairs"])
+  } else {
+    plot <- plot +
+      geom_label_repel(
+        data = label.data, hjust = .5, vjust = .5, 
+        colour = 'black', position = 'identity', 
+        show.legend = F, label = label.data[,"pairs"])
+  }
+  
+  return(plot)
 }
 
 
@@ -208,7 +248,7 @@ gsea_results <- function(genelist, hallmark_set){
   
   gsea <- GSEA(
     geneList = list,
-    minGSSize = 25,
+    minGSSize = 10,
     maxGSSize = 500,
     pvalueCutoff = 0.05,
     eps = 1e-100,
@@ -443,11 +483,11 @@ make_simMatrix <- function(df, type, treshold){
   pca <- as.data.frame(pca$x[,1:2])
   pca <- pca %>% 
     setNames(c('x','y')) %>%
-    rownames_to_column(., var = "go")
+    tibble::rownames_to_column(., var = "go")
   
   reduced <- merge(reduced, pca, by = 'go')
   reduced$parentTerm <- as.factor(reduced$parentTerm)
-  subset <- reduced[ reduced$parentSimScore > treshold, ]
+  subset <- reduced[ reduced$termDispenability < (1 - treshold), ]
   
   return(list(simM = simM, reduced = reduced, subset = subset))
 }
@@ -551,6 +591,8 @@ make_upsetvennbase <- function(arranged, df){
 }
 
 make_upsetvenn <- function(data, sets, labels){
+  panc_label = labels
+  
   plot <- ggplot(data) + 
     coord_fixed(clip = "off") +
     theme_void() + 
@@ -569,7 +611,7 @@ make_upsetvenn <- function(data, sets, labels){
     geom_venn_label_set(data, outwards_adjust = 2.5,
                         sets = sets, size = 8, label.padding = unit(0.7, "lines"),
                         fill = alpha("white", .9), 
-                        aes(label = labels)) + 
+                        aes(label = panc_label)) + 
     geom_venn_label_region(
       data, sets = sets, size = 6,
       aes(label=size), 
@@ -711,6 +753,7 @@ make_circPlot <- function(df){
      scale_fill_gradient2(
        "Activation (z-score)",
        low = "#000f64", mid = muted("#000f64"), high = "#841f27", 
+       midpoint = 0,
        aesthetics = c("fill","color")
      ) + 
      facet_grid(.~condition,
@@ -726,7 +769,7 @@ make_circPlot <- function(df){
        axis.ticks = element_blank(),
        axis.text.y = element_blank(),
        # Use gray text for the region names
-       axis.text.x = element_text(color = "gray12", size = 14),
+       axis.text.x = element_text(color = "gray12", size = 10),
        panel.background = element_rect(fill = "white",
                                        color = "white"),
        #strip parameters
@@ -734,7 +777,7 @@ make_circPlot <- function(df){
        strip.text = element_text(color = "gray12", size = 14),
        # Move the legend to the bottom
        legend.position = "bottom",
-     ) +
+     ) + 
      coord_polar())
 }
 
@@ -747,7 +790,7 @@ miRNA_plot <- function(data){
     dplyr::mutate(miRname = fct_reorder(miRname, log2FoldChange)) %>%
     ggplot(aes(x = log2FoldChange, y = miRname)) + 
     geom_col(width = .5, aes(fill = significance)) +
-    scale_fill_manual(values = direction_palette,
+    scale_fill_manual(values = regulation_palette,
     name = "Expression change:",
     guide = "legend") +
     theme_classic() +
@@ -761,7 +804,8 @@ miRNA_plot <- function(data){
           axis.title = element_text(size = 16, face = 'bold', colour = 'black'),
           legend.title = element_text(size = 14, face = 'bold', colour = 'black'),
           legend.text = element_text(size = 14, colour = 'black'),
-          legend.position = 'bottom')
+          legend.position = 'bottom',
+          plot.margin = margin(1,1.5,0,0, "cm"))
 }
 
 
