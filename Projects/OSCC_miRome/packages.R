@@ -139,10 +139,10 @@ if (!("conicfit" %in% installed.packages())) {
 }
 library(conicfit)
 # metan
-if (!("metan" %in% installed.packages())) {
-  BiocManager::install("metan", update = FALSE)
+if (!("pheatmap" %in% installed.packages())) {
+  BiocManager::install("pheatmap", update = FALSE)
 }
-library(metan)
+library(pheatmap)
 # nVennR
 if (!("nVennR" %in% installed.packages())) {
   BiocManager::install("nVennR", update = FALSE)

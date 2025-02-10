@@ -191,83 +191,131 @@ get_CategoryExpressionPlot <- function(results, sig_log2FC, sig_pval, targets,
 ###############################
 # Overrepresentation analysis #
 ###############################
-get_genelist <- function(list){
-  
-  background <- list$df %>%
-    dplyr::pull("log2FoldChange", name ="entrezID")
-  background <- sort(background, decreasing = T)
-  background <- background[-which(is.na(names(background)))]
-  background <- background[-which(duplicated(names(background)))]
-  
-  interest <- list$sig_df %>%
-    dplyr::pull("log2FoldChange", name ="entrezID")
-  interest <- sort(interest, decreasing = T)
-  
+# I. EXTRACT GENE LISTS
+get_genelist <- function(.df, .filter, .value, .name){
+  # Extract the background gene list of every expressed gene
+  background <- .df %>%
+    dplyr::distinct(entrezID, .keep_all = T) %>%
+    dplyr::pull(.value, name = .name) %>% 
+    sort(., decreasing = T)
+  # Extract the gene list of interest of DEGs
+  interest <- .df %>%
+    dplyr::filter(.filter) %>%
+    dplyr::distinct(entrezID, .keep_all = T) %>%
+    dplyr::pull(.value, name = .name) %>% 
+    sort(., decreasing = T) 
+  interest <- interest[!is.na(names(interest))]
   
   return(list(background = background, interest = interest))
 }
 
-kegg_results <- function(x, y){
-  kegg <- enrichKEGG(names(x),
-                    organism = 'hsa',
-                    pAdjustMethod = 'BH',
-                    keyType = 'kegg',
-                    universe = names(y),
-                    pvalueCutoff = 0.05)
-  return(setReadable(kegg, org.Hs.eg.db,"ENTREZID") %>%
-    as.data.frame(.) %>% 
-    dplyr::mutate(
-      GeneRatio = sapply(stringr::str_split(GeneRatio, "/"), 
-                         function(y) as.numeric(y[1])/as.numeric(y[2])),
-      BgRatio = sapply(stringr::str_split(BgRatio, "/"), 
-                       function(y) as.numeric(y[1])/as.numeric(y[2])),
-      Count = as.numeric(Count)))
-}
-go_results <- function(x, y, type = c("ALL","BP","MF","CC")){
-  return(
-    enrichGO(names(x),
-             'org.Hs.eg.db',
-             keyType = 'ENTREZID',
-             universe = names(y),
-             ont = type,
-             readable = T) %>%
-      as.data.frame(.) %>% 
-      dplyr::mutate(
-        GeneRatio = sapply(stringr::str_split(GeneRatio, "/"), 
-                           function(y) as.numeric(y[1])/as.numeric(y[2])),
-        BgRatio = sapply(stringr::str_split(BgRatio, "/"), 
-                         function(y) as.numeric(y[1])/as.numeric(y[2])),
-        Count = as.numeric(Count)))
+# II. OVER-REPRESENTATION ANALYSIS
+run_ora <- function(.interest, .background, .pathways){
+  ora <- enricher(gene = names(.interest), # gene set of interest 
+                  pvalueCutoff = 1, 
+                  qvalueCutoff = 1,
+                  pAdjustMethod = "BH", 
+                  universe = names(.background), # background gene set
+                  TERM2GENE = dplyr::select(
+                    .pathways,
+                    gs_name,
+                    human_entrez_gene))
+  ora <- setReadable(ora, org.Hs.eg.db, keyType = "ENTREZID")
+  return(list("ora" = ora))
 }
 
-gsea_results <- function(genelist, hallmark_set){
-  list = genelist[!duplicated(names(genelist))]
-  list = sort(list, decreasing = TRUE)
+extract_ora_results <- function(.ora, .db){
+  .db <- .db %>% 
+    dplyr::select(gs_name, gs_exact_source, gs_description) %>% 
+    dplyr::distinct()
+  # extract data frames
+  df <- as.data.frame(.ora@result)
+  # order on p-value
+  df <- df[order(df$`p.adjust`, decreasing = F),]
+  # change gene ratio to numeric values
+  df <- df %>% 
+    mutate(GeneRatio = sapply(stringr::str_split(df$GeneRatio, "/"), 
+                              function(x) 100*(as.numeric(x[1])/as.numeric(x[2]))),
+           BgRatio = sapply(stringr::str_split(df$BgRatio, "/"), 
+                            function(x) 100*(as.numeric(x[1])/as.numeric(x[2]))))
+  # extract pathway IDs and description from database
   
-  set.seed(123)
+  # add the pathway IDs and descriptions to the data frame
+  ids <- df$ID
+  database <- sapply(stringr::str_split(ids, "_"), 
+                     function(x) return(x[1]))
   
-  gsea <- GSEA(
-    geneList = list,
-    minGSSize = 10,
-    maxGSSize = 500,
-    pvalueCutoff = 0.05,
-    eps = 1e-100,
-    seed = TRUE,
-    by = "fgsea",
-    pAdjustMethod = "BH",
+  df$ID = .db[match(ids, .db$gs_name),][["gs_exact_source"]]
+  df$Description = .db[match(ids, .db$gs_name),][["gs_description"]]
+  df$Database = database
+  
+  # extract significant results: adjusted p-value < 0.05
+  sig_df <- df %>% 
+    dplyr::filter(p.adjust < 0.1)
+  
+  #return data frames
+  return(list("df" = df, "sig_df" = sig_df))
+}
+
+# III. GENE SET ENRICHMENT ANALYSIS
+run_gsea <- function(.geneset, .terms){
+  set.seed(42)
+  ## run the GSEA analysis
+  res <- GSEA(
+    geneList = .geneset, # gene set of interest (ordered on effect size)
+    minGSSize = 10, # minimum size of the gene set
+    maxGSSize = 500, # maximum size of the gene set
+    pvalueCutoff = 1, # adjusted p-value cutoff
+    eps =  0, # p-value cutoff (minimum)
+    seed = TRUE, # seed for reproducibility
+    pAdjustMethod = "BH", # p-value adjustment method
     TERM2GENE = dplyr::select(
-      hallmark_set,
+      .terms,
       gs_name,
-      entrez_gene) %>%
-      dplyr::mutate(entrez_gene = as.character(entrez_gene))
-  )
+      human_entrez_gene
+    ))
+  res <- setReadable(res, org.Hs.eg.db, keyType = "ENTREZID")
   
-  gsea_df <- as.data.frame(gsea@result)
-  gsea_df <- gsea_df %>%
-    dplyr::arrange(abs(NES)) %>%
-    dplyr::mutate(Direction = dplyr::case_when(NES > 0 ~ 'positive',
-                                               NES < 0 ~ 'negative'))
-  return(list(gsea = gsea, gsea_df = gsea_df))
+  # extract data frame
+  return(list("gsea" = res))
+}
+
+extract_gsea_results <- function(.gsea, .db){
+  .db <- .db %>%
+    dplyr::select(gs_subcat, gs_name, gs_exact_source, gs_description) %>% 
+    dplyr::distinct()
+  # extract data frames
+  df <- as.data.frame(.gsea@result)
+  # order on p-value
+  df <- df[order(df$`p.adjust`, decreasing = F),]
+  
+  df <- df %>%
+    dplyr::mutate(Direction = dplyr::case_when(NES > 0 ~ '+',
+                                               NES < 0 ~ '-'))
+  df <- df %>%
+    dplyr::mutate(
+      Name = sapply(stringr::str_split(ID, "_"), 
+                    function(x) return(paste(x[-1], collapse = "_")))) %>%
+    dplyr::rowwise(.) %>% 
+    # Calculate background ratio
+    dplyr::mutate(
+      Count = length(unlist(strsplit(core_enrichment,"\\/"))),
+      geneRatio = length(unlist(strsplit(core_enrichment,"\\/")))/setSize
+    ) %>% 
+    dplyr::ungroup(.)
+  
+  # add the pathway IDs and descriptions to the data frame
+  ids <- df$ID
+  df$ID = .db[match(ids, .db$gs_name),][["gs_exact_source"]]
+  df$Description = .db[match(ids, .db$gs_name),][["gs_description"]]
+  df$Database = .db[match(ids, .db$gs_name),][["gs_subcat"]]
+  
+  # extract significant results: adjusted p-value < 0.05
+  sig_df <- df %>% 
+    dplyr::filter(p.adjust < 0.05)
+  
+  #return data frames
+  return(list("df" = df, "sig_df" = sig_df))
 }
 
 
@@ -298,18 +346,19 @@ make_pca <- function(vst, key, group){
   return(plot)
 }
 
-make_heatmap <- function(vst, key){
+make_heatmap <- function(dds, key, contrast = "Intercept"){
   cols <- colorRampPalette(rev(brewer.pal(9, "RdYlBu")))(255)
-  
   #get annotations
-  anno <- data.frame(colData(vst)[key])
-  ids <-  na.omit(mapIds(org.Hs.eg.db, row.names(vst),
+  anno <- data.frame(colData(dds)[key])
+  ids <-  na.omit(mapIds(org.Hs.eg.db, row.names(dds),
                  keytype = "ENSEMBL",column = "SYMBOL",
                  multiVals = "first"))
   
+  res <- results(dds, name = contrast)
+  res <- res[match(names(ids), row.names(res)),]
   #prepare matrix
-  mat <- assay(vst)[match(names(ids), row.names(assay(vst))),]
-  mat <- mat[head(order(rowVars(mat), decreasing = T),20),]
+  mat <- assay(rlog(dds))[match(names(ids), row.names(assay(dds))),]
+  mat <- mat[head(order(res$stat, decreasing = T),20),]
   mat <- mat - rowMeans(mat)
   
   return(pheatmap(mat = mat,
@@ -339,21 +388,21 @@ make_dotplot <- function(mydata, Count, type=c("GO","KEGG")){
     data <- mydata %>% 
       #dplyr::mutate(
       #GeneRatio = as.numeric(str_split_i(GeneRatio,pattern = "/",1))/as.numeric(str_split_i(GeneRatio,pattern = "/", 2))) %>%
-      dplyr::arrange(desc(GeneRatio)) %>%
-      dplyr::mutate(Description = fct_reorder(Description, GeneRatio)) %>%
+      dplyr::arrange(desc(p.adjust)) %>%
+      dplyr::mutate(Description = fct_reorder(Description, geneRatio)) %>%
       .[1:min(10, (dim(mydata)[1])),]
   } else {
   data <- mydata %>%
     #dplyr::mutate(
     #  GeneRatio = as.numeric(str_split_i(GeneRatio,pattern = "/",1))/as.numeric(str_split_i(GeneRatio,pattern = "/", 2))) %>%
-    dplyr::arrange(desc(GeneRatio)) %>%
-    dplyr::mutate(Description = fct_reorder(Description, GeneRatio)) %>%
-    group_by(., ONTOLOGY) %>%
+    dplyr::arrange(desc(p.adjust)) %>%
+    dplyr::mutate(Name = fct_reorder(Name, geneRatio)) %>%
+    group_by(., Database) %>%
     dplyr::slice_head(n = 10)
   }
     
   plot <-         
-    ggplot(data, aes(x = GeneRatio, y = Description, size = as.numeric(Count))) + 
+    ggplot(data, aes(x = geneRatio, y = Name, size = as.numeric(Count))) + 
     geom_point(aes(color = pvalue)) + 
     guides(color = guide_colorbar(title = "p-value", order = 1),
            size = guide_legend(title = "Gene count", order = 2)) +
@@ -367,11 +416,11 @@ make_dotplot <- function(mydata, Count, type=c("GO","KEGG")){
   
   if(type == "GO"){
     return(plot + 
-             facet_grid(ONTOLOGY ~ ., scales = "free", 
+             facet_grid(Database ~ ., scales = "free", 
                         labeller = as_labeller(
-                          c("BP" = "Biological processes",
-                            "MF" = "Molecular functions",
-                            "CC" = "Cellular components"))) +
+                          c("GO:BP" = "Biological processes",
+                            "GO:MF" = "Molecular functions",
+                            "GO:CC" = "Cellular components"))) +
              theme(strip.text.y = element_text(size = 14))
              )
     } else {
@@ -413,51 +462,50 @@ make_vulcanplot <- function(total, sig){
 
 make_gseaplot <- function(data, type = NULL){
   plot <- data %>%
-    dplyr::arrange(desc(abs(enrichmentScore))) %>%
-    dplyr::mutate(Description = stringr::str_replace_all(
-      stringr::str_remove(Description, "HALLMARK_|KEGG_|GOBP_|GOMF_|GOCC_"),"_"," ")) %>%
-    dplyr::mutate(Description = fct_reorder(Description, abs(enrichmentScore))) %>%
-    dplyr::mutate(ontology = str_split_i(ID, "_", 1)) %>%
+    dplyr::arrange(p.adjust) %>%
+    dplyr::mutate(Name = fct_reorder(Name, abs(NES))) %>%
     dplyr::slice_head(n=10) %>%
-    ggplot(aes(x = abs(enrichmentScore), 
-               y = Description,
+    ggplot(aes(x = abs(NES), 
+               y = Name,
                size = abs(NES))) + 
     geom_point(aes(fill = Direction, shape = Direction)) + 
+    guides(size = FALSE) +
     scale_fill_manual(
       values = c(
-        positive = "red",
-        negative = "blue"),
+        "+" = "red",
+        "-" = "blue"),
+      labels = c("+" = "Positive", 
+                 "-" = "Negative"),
       na.value = "grey50",
       guide = "legend",
       name = "Direction of enrichment") + 
     scale_shape_manual(
       values = c(
-        "negative" = 25,
-        "positive" = 24
+        "+" = 24,
+        "-" = 25
       ),
+      labels = c("+" = "Positive", 
+                 "-" = "Negative"),
       guide = "legend",
       name = "Direction of enrichment"
-    ) + 
-    scale_size(
-      range = c(6,10),
-      guide = "legend",
-      name = "Normalized enrichment score") + 
+    ) +  
     theme_classic() + 
     theme(axis.text.x = element_text(size = 14),
           axis.title.x = element_text(size = 14),
           legend.title = element_text(size = 14),
           legend.text = element_text(size = 14)) + 
-    labs(x = "Enrichment score", y="")
+    labs(x = "Normalized Enrichment score (NES)", y="")
   
   if(type == "GO"){
     return(plot + 
-             facet_grid(ontology ~ ., scales = "free", 
+             facet_grid(Database ~ ., scales = "free", 
                         labeller = as_labeller(
-                          c("GOBP" = "Biological processes",
-                            "GOMF" = "Molecular functions",
-                            "GOCC" = "Cellular components"))) +
+                          c("GO:BP" = "Biological processes",
+                            "GO:MF" = "Molecular functions",
+                            "GO:CC" = "Cellular components"))) +
              theme(strip.text.y = element_text(size = 14),
                    strip.background = element_rect(fill = "white"),
+                   legend.key = element_blank(),
                    panel.background = element_rect(color = "black",
                                                    linewidth = 0.5))
     )
@@ -487,25 +535,77 @@ make_simMatrix <- function(df, type, treshold){
   
   reduced <- merge(reduced, pca, by = 'go')
   reduced$parentTerm <- as.factor(reduced$parentTerm)
-  subset <- reduced[ reduced$termDispenability < (1 - treshold), ]
+
+  return(list(simM = simM, reduced = reduced))
+}
+
+get_cluster_representative <- function(.reduced, .go){
+  # merge the reduced data to include gene lists
+  linkage <- merge(.reduced[,c(1,3,2,4,10,11,12)],
+                   .go, by.x ="go", by.y = "ID") %>%
+    dplyr::select(go, cluster, score, GeneRatio, zScore, p.adjust, geneID)
   
-  return(list(simM = simM, reduced = reduced, subset = subset))
+  # calculate normalized term weight
+  linkage <- linkage %>%
+    dplyr::rowwise() %>%
+    # ...as a function of the z-score and adjusted p-value
+    dplyr::mutate(weight = abs(zScore)*(-log10(p.adjust))) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::mutate(weight = as.numeric(weight/max(weight))) %>%
+    tidyr::separate_rows(geneID, sep = "/") %>% 
+    dplyr::select(c("geneID", "go", "weight", "cluster")) %>%
+    setNames(.,c("node1", "node2", "weight", "cluster")) %>%
+    as.data.frame(.)
+  
+  # create a network visualization of gene and GO-term relationships
+  net <- graph_from_data_frame(linkage)
+  net <- simplify(net, remove.multiple = F, remove.loops = T)
+  # calculate hub score of each gene
+  hs <-  hub_score(net, scale = T, weights = linkage$weight)$vector
+  
+  # summarize gene hub scores, to determine the final weight of each GO term
+  linkage <- linkage %>%
+    dplyr::rowwise(.) %>%
+    dplyr::mutate(hub_score = hs[which(names(hs) == node1)]) %>% 
+    dplyr::rename(geneID = node1, go = node2) %>% 
+    dplyr::group_by(go, cluster) %>%
+    dplyr::summarise(weight = first(weight),
+                     geneID = paste(geneID, collapse = "/"),
+                     hub_score = sum(hub_score, na.rm = T))
+  
+  # select cluster representatives according to calculated weight
+  representative.terms <- linkage %>% 
+    dplyr::group_by(cluster) %>%
+    dplyr::arrange(desc(hub_score * weight)) %>%
+    dplyr::slice_head(n = 1) %>%
+    dplyr::pull(go)
+  
+  linkage <- linkage %>%
+    dplyr::rowwise(.) %>%
+    dplyr::mutate(Type = ifelse(go %in% representative.terms,
+                                "Representative", "Member"))
+  
+  .reduced <- inner_join(.reduced, linkage, by = c("go", "cluster")) %>% 
+    dplyr::mutate(cluster = as.factor(cluster))
+  
+  return(list(reduced = .reduced, net = net, rep = representative.terms))
 }
 
 
 
-make_GO_simplot <- function(reduced, subset){
+make_GO_simplot <- function(reduced){
   return(ggplot( data = reduced )
-         + stat_ellipse(geom = "polygon", aes( x = x, y = y, colour = parentTerm, fill = parentTerm), 
+         + stat_ellipse(geom = "polygon", aes( x = x, y = y, colour = cluster, fill = cluster), 
                         type = "norm", level = 0.68, 
                         alpha = .15, linetype = 2, show.legend = F)
-         + geom_point( aes( x = x, y = y, colour = parentTerm, size = score), 
+         + geom_point( aes( x = x, y = y, colour = cluster, size = weight), 
                        alpha = I(0.6), show.legend = F)
-         + geom_point( aes( x = x, y = y, size = score), shape = 21, 
+         + geom_point( aes( x = x, y = y, size = weight), shape = 21, 
                        fill = "transparent", colour = I (alpha ("black", 0.3) ), show.legend = F)
          + scale_size( range=c(5, 30))
          + theme_bw()
-         + geom_label_repel( data = subset, aes(x = x, y = y, label = term, colour = parentTerm), 
+         + geom_label_repel( data = subset.data.frame(reduced, Type == "Representative"),
+                             aes(x = x, y = y, label = term, colour = cluster), 
                              size = 3, show.legend = F )
          + guides( color = "none")
          + labs (y = "semantic space x", x = "semantic space y")
@@ -536,7 +636,7 @@ make_upsetvennbase <- function(arranged, df){
   )
   tmp = merge(tmp, arranged[,c("region","size")], by = "region", all = T)
   
-  set.seed(123)
+  set.seed(42)
   
   xy = rbind(
     calculateCircle(x = tmp$x[1], y = tmp$y[1], r = 0.2, 
@@ -747,7 +847,9 @@ make_circPlot <- function(df){
      ) + 
      geom_label_repel(
        data = subset.data.frame(df, geneRation > 0),
-       aes(label = geneRation, y = max(geneRation)-5), direction = "y",
+       aes(label = str_wrap(paste(paste0("zsc:",round(zscore,2)),
+                                  paste0("(",geneRation,"%)")), 10),
+           y = max(geneRation)-5), direction = "y",
        fill="white",label.padding = unit(5, "pt"),
        position=position_dodge(width=0.9), vjust=-0.25) +
      scale_fill_gradient2(
@@ -756,7 +858,7 @@ make_circPlot <- function(df){
        midpoint = 0,
        aesthetics = c("fill","color")
      ) + 
-     facet_grid(.~condition,
+     facet_grid(.~condition, 
                 labeller = as_labeller(
                   c("CA11" = "C.albicans (MOI 1:1)",
                     "CP51" = "C.parapsilosis (MOI 5:1)")
@@ -804,6 +906,7 @@ miRNA_plot <- function(data){
           axis.title = element_text(size = 16, face = 'bold', colour = 'black'),
           legend.title = element_text(size = 14, face = 'bold', colour = 'black'),
           legend.text = element_text(size = 14, colour = 'black'),
+          panel.spacing = unit(2, "cm"),
           legend.position = 'bottom',
           plot.margin = margin(1,1.5,0,0, "cm"))
 }
