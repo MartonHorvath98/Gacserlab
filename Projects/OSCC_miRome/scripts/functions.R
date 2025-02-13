@@ -31,10 +31,15 @@ calc_DiffExp <- function(matrix, coldata, design){
 }
 
 get_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, pval_treshold){
-  res <- results(dds, contrast = contrast, name = name,
+  # Extract results table
+  tmp <- results(dds, contrast = contrast, name = name,
                  independentFiltering = T, pAdjustMethod = "BH", alpha = 0.05)
+  # Perform multiple testing correction
+  fdr <- fdrtool(tmp$stat, statistic = "normal", plot = F)
+  tmp$padj <- p.adjust(fdr$pval, method = "BH")
+  # Create a data frame from the results table
   
-  df <- data.frame(res, geneID = rownames(res), row.names = rownames(res))
+  df <- data.frame(tmp, geneID = rownames(tmp), row.names = rownames(tmp))
   df <- df %>%
     dplyr::mutate(geneID = mapIds(org.Hs.eg.db, 
                                   row.names(.), 
@@ -388,44 +393,57 @@ make_dotplot <- function(mydata, Count, type=c("GO","KEGG")){
     data <- mydata %>% 
       #dplyr::mutate(
       #GeneRatio = as.numeric(str_split_i(GeneRatio,pattern = "/",1))/as.numeric(str_split_i(GeneRatio,pattern = "/", 2))) %>%
-      dplyr::arrange(desc(p.adjust)) %>%
-      dplyr::mutate(Description = fct_reorder(Description, geneRatio)) %>%
+      dplyr::arrange(p.adjust) %>%
+      dplyr::mutate(Description = fct_reorder(Description, GeneRatio)) %>%
       .[1:min(10, (dim(mydata)[1])),]
   } else {
-  data <- mydata %>%
-    #dplyr::mutate(
-    #  GeneRatio = as.numeric(str_split_i(GeneRatio,pattern = "/",1))/as.numeric(str_split_i(GeneRatio,pattern = "/", 2))) %>%
-    dplyr::arrange(desc(p.adjust)) %>%
-    dplyr::mutate(Name = fct_reorder(Name, geneRatio)) %>%
-    group_by(., Database) %>%
-    dplyr::slice_head(n = 10)
+    data <- mydata %>%
+      #dplyr::mutate(
+      #  GeneRatio = as.numeric(str_split_i(GeneRatio,pattern = "/",1))/as.numeric(str_split_i(GeneRatio,pattern = "/", 2))) %>%
+      dplyr::arrange(p.adjust) %>%
+      dplyr::mutate(Name = fct_reorder(Name, geneRatio)) %>%
+      group_by(., Database) %>%
+      dplyr::slice_head(n = 10)
   }
-    
-  plot <-         
-    ggplot(data, aes(x = geneRatio, y = Name, size = as.numeric(Count))) + 
-    geom_point(aes(color = pvalue)) + 
-    guides(color = guide_colorbar(title = "p-value", order = 1),
-           size = guide_legend(title = "Gene count", order = 2)) +
-    scale_size(range = c(2,7), limits = limits, breaks =  breaks) + 
-    theme(axis.text.x = element_text(size = 14),
-          axis.title.x = element_text(size = 14),
-          legend.title = element_text(size = 14),
-          legend.text = element_text(size = 14),
-          strip.text.y = element_text(size = 14)) + 
-    labs(size = "Count", y = "")
   
-  if(type == "GO"){
-    return(plot + 
+  
+  
+  if(type == "KEGG"){
+    plot <-         
+      ggplot(data, aes(x = GeneRatio, y = Description, size = as.numeric(Count))) + 
+      geom_point(aes(color = pvalue)) + 
+      guides(color = guide_colorbar(title = "p-value", order = 1),
+             size = guide_legend(title = "Gene count", order = 2)) +
+      scale_size(range = c(2,7), limits = limits, breaks =  breaks) + 
+      theme(axis.text.x = element_text(size = 14),
+            axis.title.x = element_text(size = 14),
+            legend.title = element_text(size = 14),
+            legend.text = element_text(size = 14),
+            strip.text.y = element_text(size = 14)) + 
+      labs(size = "Count", y = "")
+  } else {
+    plot <-         
+      ggplot(data, aes(x = geneRatio, y = Name, size = as.numeric(Count))) + 
+      geom_point(aes(color = pvalue)) + 
+      guides(color = guide_colorbar(title = "p-value", order = 1),
+             size = guide_legend(title = "Gene count", order = 2)) +
+      scale_size(range = c(2,7), limits = limits, breaks =  breaks) + 
+      theme(axis.text.x = element_text(size = 14),
+            axis.title.x = element_text(size = 14),
+            legend.title = element_text(size = 14),
+            legend.text = element_text(size = 14),
+            strip.text.y = element_text(size = 14)) + 
+      labs(size = "Count", y = "") + 
              facet_grid(Database ~ ., scales = "free", 
                         labeller = as_labeller(
                           c("GO:BP" = "Biological processes",
                             "GO:MF" = "Molecular functions",
                             "GO:CC" = "Cellular components"))) +
              theme(strip.text.y = element_text(size = 14))
-             )
-    } else {
+    
+  } 
+  
       return(plot)
-    }
 }
 
 

@@ -1,7 +1,10 @@
-*/data/
-*/report/
-*/results/
-*.RData
-*.Rhistory
-*.Rproj.user
-*.Rproj
+**/data/**
+**/report/**
+**/results/**
+**/grch38/**
+**/FastQ_Screen_Genomes/**
+*.RData*
+*.Rhistory*
+*.Rproj.user*
+*.Rproj*
+.Rproj.user*

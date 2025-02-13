@@ -1,0 +1,15 @@
+name: miRNA
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - cutadapt=4.9
+  - fastqc=0.12.1
+  - trim-galore=0.6.7
+  - seqkit=2.7.0
+  - hisat2=2.2.1
+  - samtools=1.20
+  - gffread=0.12.7
+  - bedops=2.4.41
+  - fastq-screen=0.15.3
