@@ -143,11 +143,6 @@ if (!("pheatmap" %in% installed.packages())) {
   BiocManager::install("pheatmap", update = FALSE)
 }
 library(pheatmap)
-# nVennR
-if (!("nVennR" %in% installed.packages())) {
-  BiocManager::install("nVennR", update = FALSE)
-}
-library(nVennR)
 # purrr
 if (!("purrr" %in% installed.packages())) {
   BiocManager::install("purrr", update = FALSE)
@@ -168,3 +163,8 @@ if (!("GOSemSim" %in% installed.packages())) {
   BiocManager::install("GOSemSim", update = FALSE)
 }
 library(GOSemSim)
+#igraph
+if (!("igraph" %in% installed.packages())) {
+  BiocManager::install("igraph", update = FALSE)
+}
+library(igraph)

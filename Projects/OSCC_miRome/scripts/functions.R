@@ -71,7 +71,7 @@ get_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, pval_tr
 }
 
 miR_results <- function(dds, contrast = NULL, name = NULL, 
-                        lfc_treshold, fdr_treshold, tissue){
+                        lfc_treshold, p_treshold, tissue){
   res <- results(dds, contrast = contrast, name = name,
                  independentFiltering = T, pAdjustMethod = "BH", alpha = 0.05)
   fdr <- fdrtool(res$stat, statistic = "normal", plot = F)
@@ -81,13 +81,13 @@ miR_results <- function(dds, contrast = NULL, name = NULL,
   df <- data.frame(res, miRname = rownames(res), row.names = rownames(res))
   df <- df %>%
     dplyr::mutate(significance = dplyr::case_when(abs(log2FoldChange) > lfc_treshold & 
-                                                    padj > fdr_treshold ~ 'log2FoldChange',
+                                                    pvalue > p_treshold ~ 'log2FoldChange',
                                                   abs(log2FoldChange) < lfc_treshold & 
-                                                    padj < fdr_treshold ~ 'Log10P',
+                                                    pvalue < p_treshold ~ 'Log10P',
                                                   log2FoldChange < (-1)*lfc_treshold & 
-                                                    padj < fdr_treshold ~ 'Signif. down-regulated',
+                                                    pvalue < p_treshold ~ 'Signif. down-regulated',
                                                   log2FoldChange > lfc_treshold & 
-                                                    padj < fdr_treshold ~ 'Signif. up-regulated',
+                                                    pvalue < p_treshold ~ 'Signif. up-regulated',
                                                   T ~ 'NS')) %>% 
   dplyr::left_join(tissue, by = c("miRname" = "miRname"))
   
@@ -557,73 +557,288 @@ make_simMatrix <- function(df, type, treshold){
   return(list(simM = simM, reduced = reduced))
 }
 
-get_cluster_representative <- function(.reduced, .go){
-  # merge the reduced data to include gene lists
-  linkage <- merge(.reduced[,c(1,3,2,4,10,11,12)],
-                   .go, by.x ="go", by.y = "ID") %>%
-    dplyr::select(go, cluster, score, GeneRatio, zScore, p.adjust, geneID)
+# ---------------------------------------------------------------------- #
+# Function - Cluster analysis                                            #
+# ---------------------------------------------------------------------- #
+# a function calculating the Cohen's Kappa coefficient between a list of gene sets
+cohen_kappa <- function(.list){
+  N <- length(.list)
+  kappa_mat <- matrix(0, nrow = N, ncol = N,
+                      dimnames = list(names(.list), names(.list)))
+  diag(kappa_mat) <- 1
+  
+  total <- length(unique(unlist(.list)))
+  
+  for (i in 1:(N - 1)) {
+    for (j in (i + 1):N) {
+      genes_i <- .list[[i]]
+      genes_j <- .list[[j]]
+      both <- length(intersect(genes_i, genes_j))
+      term_i <- length(base::setdiff(genes_i, genes_j))
+      term_j <- length(base::setdiff(genes_j, genes_i))
+      no_terms <- total - sum(both, term_i, term_j)
+      observed <- (both + no_terms)/total
+      chance <- (both + term_i) * (both + term_j)
+      chance <- chance + (term_j + no_terms) * (term_i + 
+                                                  no_terms)
+      chance <- chance/total^2
+      kappa_mat[j, i] <- kappa_mat[i, j] <- (observed - 
+                                               chance)/(1 - chance)
+    }}
+  return(kappa_mat)
+}
+
+# A function to create a network graph of gene sets based on the Cohen's Kappa coefficient
+# then cluster the network based on interconnectivity using Louvain algorithm
+get_cluster <- function(.df, .matrix, .column, .threshold = 0.25){
+  # extract the list of enriched gene sets 
+  genes <- split(strsplit(.df[["core_enrichment"]],"/"), .df[["ID"]])
+  
+  # subset the cohen's matrix for the gene sets of interest
+  similarity.matrix <- .matrix[.df[['ID']], .df[['ID']]]
+  
+  # create an adjacency matrix based on the similarity matrix
+  adjacency.matrix <- similarity.matrix > .threshold
+  
+  set.seed(42)
+  # create a network graph from the adjacency matrix
+  graph <- graph_from_adjacency_matrix(adjacency.matrix, mode = "undirected", diag = F)
+  
+  # annotate the nodes of the graph with the enrichment results
+  V(graph)$Name <- .df$Name
+  V(graph)$NES <- .df$NES
+  V(graph)$geneRatio <- .df$geneRatio
+  
+  # Community detection (Louvain algorithm)
+  clusters <- cluster_louvain(graph)
+  # annotate nodes with cluster membership
+  V(graph)$cluster <- membership(clusters)
+  
+  # extract cluster information
+  cluster_summary <- data.frame(
+    ID = names(V(graph)),
+    cluster = as.factor(V(graph)$cluster))
+  
+  cluster_summary <- distinct(cluster_summary, .keep_all = T)
+  
+  df = .df %>% 
+    dplyr::inner_join(., cluster_summary, by = "ID")
+  
+  return(list(graph = graph, df = df))
+}
+
+get_cluster_representative <- function(.cluster, .degs){
+  # add gene expression values to the clusters
+  linkage <- .cluster %>% 
+    dplyr::select(ID, Name, core_enrichment, cluster) %>%
+    tidyr::separate_rows(core_enrichment, sep = "/")
+  
+  linkage$logFC = .degs$log2FoldChange[match(linkage$core_enrichment, .degs$Symbol)]
+  linkage$padj = .degs$padj[match(linkage$core_enrichment, .degs$Symbol)]
   
   # calculate normalized term weight
-  linkage <- linkage %>%
-    dplyr::rowwise() %>%
-    # ...as a function of the z-score and adjusted p-value
-    dplyr::mutate(weight = abs(zScore)*(-log10(p.adjust))) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::mutate(weight = as.numeric(weight/max(weight))) %>%
-    tidyr::separate_rows(geneID, sep = "/") %>% 
-    dplyr::select(c("geneID", "go", "weight", "cluster")) %>%
-    setNames(.,c("node1", "node2", "weight", "cluster")) %>%
+  linkage$weight = abs(linkage$logFC)*(-log10(linkage$padj))
+  linkage$weight = linkage$weight/max(linkage$weight, na.rm = T)
+  
+  linkage = linkage %>% 
+    dplyr::select(c("core_enrichment", "ID", "weight", "cluster")) %>%
+    setNames(.,c("node1", "node2", "weight", "cluster")) %>% 
     as.data.frame(.)
   
   # create a network visualization of gene and GO-term relationships
   net <- graph_from_data_frame(linkage)
-  net <- simplify(net, remove.multiple = F, remove.loops = T)
+  net <- igraph::simplify(net, remove.multiple = F, remove.loops = T)
+  
   # calculate hub score of each gene
-  hs <-  hub_score(net, scale = T, weights = linkage$weight)$vector
+  hs <-  igraph::hub_score(net, scale = T, weights = linkage$weight)$vector
+  
+  # summarize gene hub scores, to determine the final weight of each GO term
+  linkage$geneRatio = .cluster$geneRatio[match(linkage$node2, .cluster$ID)]
+  
+  linkage <- linkage %>%
+    dplyr::mutate(hub_score = geneRatio * hs[match(node1, names(hs))]) %>% 
+    dplyr::rename(geneID = node1, ID = node2) %>% 
+    dplyr::group_by(ID, cluster) %>%
+    dplyr::summarise(core_enrichment = paste(geneID, collapse = "/"),
+                     hub_score = sum(hub_score, na.rm = T))
+  
+  out_df <- inner_join(.cluster, linkage, by = c("ID","core_enrichment","cluster")) %>%
+    dplyr::mutate(cluster = as.factor(cluster))
+  
+  # select cluster representatives according to calculated weight
+  representative.terms <- out_df %>%
+    dplyr::group_by(cluster) %>%
+    dplyr::arrange(desc(hub_score)) %>%
+    dplyr::slice_head(n = 1) %>%
+    dplyr::pull(ID)
+  
+  out_df <- out_df %>%
+    dplyr::rowwise(.) %>%
+    dplyr::mutate(Representative = ifelse(ID %in% representative.terms, T, F))
+  
+  return(out_df)
+}
+
+filter_graph <- function(.graph, .threshold){
+  cl <- table(V(.graph)$cluster)
+  
+  valid_cl <- which(cl >= .threshold)
+  
+  filtered_vertices <- which(V(.graph)$cluster %in% valid_cl)
+  
+  subgraph <- induced_subgraph(.graph, vids = filtered_vertices)
+  
+  return(subgraph)
+}
+
+plot_network <- function(.net, .layout, .labels, .df){
+  edges = as.data.frame(as_edgelist(.net)) %>% 
+    setNames(c("from", "to"))
+  
+  df = data.frame(x = as.data.frame(.layout)[,1],
+                  y = as.data.frame(.layout)[,2],
+                  ID = names(V(.net)),
+                  Name = V(.net)$Description,
+                  cluster = as.factor(V(.net)$cluster),
+                  Representative = V(.net)$Representative,
+                  weight = abs(.df[["hub_score"]][match(names(V(.net)), .df[["ID"]])]),
+                  regulation = ifelse(.df[["NES"]][match(names(V(.net)), .df[["ID"]])] > 0, "UP", "DOWN")
+  )
+  
+  lines = edges %>% 
+    dplyr::mutate(
+      from.x = df$x[match(edges$from, df$ID)],
+      from.y = df$y[match(edges$from, df$ID)],
+      to.x = df$x[match(edges$to, df$ID)],
+      to.y = df$y[match(edges$to, df$ID)]
+    )
+  
+  plot = ggplot() +
+    stat_ellipse(data = df, geom = "polygon", 
+                 aes(x = x, y = y, group = cluster), fill = "grey75", color = "grey15", #color = cluster, fill = cluster), 
+                 type = "norm", level = 0.9,
+                 alpha = .1, linetype = 2, show.legend = F) +
+    geom_segment(data = lines, aes(x = from.x, y = from.y, xend = to.x, yend = to.y),
+                 color = "grey25") +
+    geom_point(data = df, aes(x = x, y = y, size = weight, fill = regulation), #fill = cluster, size = weight),
+               shape = 21, colour = "black") +
+    # geom_point(data = subset(df, Representative), aes(x = x, y = y), #fill = cluster, size = 5),
+    #            shape = 21, colour = "orange", fill = "transparent", stroke = 2, size = 15) +
+    geom_label_repel(data = subset(df, Name %in% .labels), 
+                     aes(x = x, y = y,
+                         label = ifelse(Representative, str_wrap(gsub("_"," ",Name), 30), "")),
+                     max.overlaps = 100, min.segment.length = 0, size = 6,
+                     color = "grey15", fill = "white", show.legend = F,
+                     arrow = arrow(type = "closed", angle = 15, length = unit(0.1,"in")),
+                     box.padding = unit(0.5,"in"), point.padding = unit(0.1,"in"),
+                     force = 1, direction = "both") +
+    scale_fill_manual(values = c("UP" = "darkred", "DOWN" = "blue"),
+                      labels = c("UP" = "Activated", "DOWN" = "Inhibited"),
+                      name = c("Regulation"),
+                      guide = guide_legend(override.aes = c(size = 10))) +
+    scale_size_continuous(guide = "none", range=c(5,15)) +
+    theme_void() +
+    theme(legend.title=element_text(size=28), 
+          legend.text=element_text(size=28),
+          legend.spacing=unit(1.5,"lines"),
+          legend.position = "right")
+  
+  return(plot)
+}
+
+getCircplotData <- function(.cluster, .deg, .interest_cluster, .interest_cluster_genes, .palette){
+  linkage <- .cluster %>% 
+    dplyr::filter(ID %in% names(.interest_cluster)) %>% 
+    dplyr::select(ID, Name, core_enrichment, cluster) %>%
+    tidyr::separate_rows(core_enrichment, sep = "/") %>% 
+    dplyr::left_join(.deg[,c("geneID","log2FoldChange","pvalue")],
+                     by = c("core_enrichment" = "geneID")) %>% 
+    dplyr::rowwise() %>%
+    # ...as a function of the z-score and adjusted p-value
+    dplyr::mutate(weight = abs(log2FoldChange)*(-log10(pvalue))) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::filter(complete.cases(.)) %>% 
+    dplyr::mutate(weight = as.numeric(weight/max(weight))) %>%
+    dplyr::select(c("core_enrichment", "Name", "weight", "cluster")) %>%
+    setNames(.,c("node1", "node2", "weight", "cluster")) %>%
+    as.data.frame(.)
+  
+  # Transform input data in a adjacency matrix
+  adjacencyData <- with(linkage, table(node1, node2))
+  # circlize::chordDiagram(adjacencyData, transparency = 0.5)
+  
+  
+  # create a network visualization of gene and GO-term relationships
+  net <- graph_from_data_frame(linkage)
+  net <- igraph::simplify(net, remove.multiple = F, remove.loops = T)
+  # calculate hub score of each gene
+  hs <-  igraph::hub_score(net, scale = T, weights = linkage$weight)$vector
   
   # summarize gene hub scores, to determine the final weight of each GO term
   linkage <- linkage %>%
     dplyr::rowwise(.) %>%
-    dplyr::mutate(hub_score = hs[which(names(hs) == node1)]) %>% 
-    dplyr::rename(geneID = node1, go = node2) %>% 
-    dplyr::group_by(go, cluster) %>%
-    dplyr::summarise(weight = first(weight),
-                     geneID = paste(geneID, collapse = "/"),
-                     hub_score = sum(hub_score, na.rm = T))
+    dplyr::mutate(hub_score = hs[which(names(hs) == node1)])
   
-  # select cluster representatives according to calculated weight
-  representative.terms <- linkage %>% 
-    dplyr::group_by(cluster) %>%
-    dplyr::arrange(desc(hub_score * weight)) %>%
-    dplyr::slice_head(n = 1) %>%
-    dplyr::pull(go)
+  linkage_wide <- linkage %>% 
+    dplyr::select(node1, node2, hub_score) %>%
+    tidyr::pivot_wider(names_from = node2, values_from = hub_score) %>%
+    dplyr::mutate(across(where(is.numeric), ~ifelse(is.na(.), 0, .))) %>% 
+    tibble::column_to_rownames("node1") %>% 
+    as.matrix()
   
-  linkage <- linkage %>%
-    dplyr::rowwise(.) %>%
-    dplyr::mutate(Type = ifelse(go %in% representative.terms,
-                                "Representative", "Member"))
+  background = unique(linkage$node1[-c(which(linkage$node1 %in% .interest_cluster_genes))])
+  focus = .interest_cluster_genes                   
+  grid.col = c(.palette,
+               setNames(rep("grey", length(background)), background),
+               setNames(rep("red", length(focus)), focus))
   
-  .reduced <- inner_join(.reduced, linkage, by = c("go", "cluster")) %>% 
-    dplyr::mutate(cluster = as.factor(cluster))
+  # Extract sector names
+  from_sectors <- rownames(linkage_wide)
+  to_sectors <- colnames(linkage_wide)
   
-  return(list(reduced = .reduced, net = net, rep = representative.terms))
+  border_mat = matrix(NA, nrow = nrow(linkage_wide), ncol = ncol(linkage_wide))
+  border_mat[row.names(linkage_wide) %in% .interest_cluster_genes, ] = "red"
+  dimnames(border_mat) = dimnames(linkage_wide)
+  
+  return(list(data.mat = linkage_wide, border.mat = border_mat, grid.col = grid.col))
 }
 
+plotCircplot <- function(.path, .data, .color, .links, .labels){
+  png(.path,
+      width = 25, height = 15, res = 300, units = "in")
+  circos.par(start.degree = 90)
+  circlize::chordDiagram(.data, annotationTrack = "grid",
+                         grid.col = .color, transparency = 0.5,
+                         link.border = .links,
+                         preAllocateTracks = list(track.height = 0.05))
+  
+  # Add labels only to the selected sectors
+  circos.track(track.index = 1, panel.fun = function(x, y) {
+    sector_name <- get.cell.meta.data("sector.index")
+    
+    # Label all 'to' sectors and only selected 'from' sectors
+    if (sector_name %in% .labels) {
+      circos.text(CELL_META$xcenter, CELL_META$ylim[1], CELL_META$sector.index, 
+                  facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+    }
+  }, bg.border = NA)
+  dev.off()
+  circos.clear()
+}
 
-
-make_GO_simplot <- function(reduced){
-  return(ggplot( data = reduced )
+make_GO_simplot <- function(.reduced){
+  return(ggplot( data = .reduced )
          + stat_ellipse(geom = "polygon", aes( x = x, y = y, colour = cluster, fill = cluster), 
                         type = "norm", level = 0.68, 
                         alpha = .15, linetype = 2, show.legend = F)
-         + geom_point( aes( x = x, y = y, colour = cluster, size = weight), 
+         + geom_point( aes( x = x, y = y, colour = cluster, size = hub_score), 
                        alpha = I(0.6), show.legend = F)
-         + geom_point( aes( x = x, y = y, size = weight), shape = 21, 
+         + geom_point( aes( x = x, y = y, size = hub_score), shape = 21, 
                        fill = "transparent", colour = I (alpha ("black", 0.3) ), show.legend = F)
          + scale_size( range=c(5, 30))
          + theme_bw()
-         + geom_label_repel( data = subset.data.frame(reduced, Type == "Representative"),
-                             aes(x = x, y = y, label = term, colour = cluster), 
+         + geom_label_repel( data = subset.data.frame(.reduced, Representative),
+                             aes(x = x, y = y, label = Name, colour = cluster), 
                              size = 3, show.legend = F )
          + guides( color = "none")
          + labs (y = "semantic space x", x = "semantic space y")
