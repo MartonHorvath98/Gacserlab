@@ -22,17 +22,13 @@ if (!dir.exists(file.path(results_dir, miR.folder, date))) {
 #######################################
 # 2.) Load functions for the analyses #
 #######################################
-source("functions.R")
-source("packages.R")
+source("scripts/functions.R")
+source("scripts/packages.R")
 
 ########################## 
 # 3.) Load analysis data #
 ##########################
 # Copy readcounts from their source folder to the data folder
-miR.path <- choose.dir(getwd(), "Select the directory containing the count files")
-miR.files <- list.files(miR.path, pattern = ".xlsx$", full.names = T)
-file.copy(from = miR.files, to = file.path(data_dir, miR.folder))
-
 if (exists("miR.readcounts") == F) {
   miR.reads <- lapply(list.files(file.path(data_dir, miR.folder), 
                                   pattern = ".xlsx$",
@@ -57,16 +53,13 @@ if (exists("miR.readcounts") == F) {
   write.table(miR.counts, file.path(data_dir,miR.folder, "miR_readcounts.csv"),
               sep =",", na = "NA", dec = ".", row.names = F, col.names = T)
   
+  rm(ls = ls()[grep("miR.", ls())])
 }
-rm(ls = ls()[grep("miR.", ls())])
 
 ##############################################
 # 2.) Make differential analyses with DESeq2 #
 ##############################################
 # Tissue specific mean expression of miRNAs
-install.packages("arrow")
-library(arrow)
-
 miR.tissue_expression <- read_parquet(file.path(data_dir,miR.folder,"miRNA_tissue_data.parquet"))
 
 # Load the count data
@@ -115,9 +108,12 @@ ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_6h_pca.png"),
 miR.Ca11_1h.res <- miR_results(miR.DESeq.1h$dds,
                            contrast = list("condition_CA11_vs_ctrl"),
                            name = c(''),
-                           lfc_treshold = 1.5,
+                           lfc_treshold = 1,
                            p_treshold = 0.05,
                            tissue = miR.tissue_expression)
+# Check the number of DEGs:
+table(miR.Ca11_1h.res$sig_df$significance) # 0 down-regulated, 3 up-regulated
+
 # save to excel
 openxlsx::write.xlsx(miR.Ca11_1h.res[c(1:2)],
                      file.path(results_dir, miR.folder, date, tables_dir, "Ca11_1h_miR_expr.xlsx"))
@@ -127,9 +123,13 @@ openxlsx::write.xlsx(miR.Ca11_1h.res[c(1:2)],
 miR.Ca11_6h.res <- miR_results(miR.DESeq.6h$dds,
                             contrast = list("condition_CA11_vs_ctrl"),
                             name = c(''),
-                            lfc_treshold = 1.5,
+                            lfc_treshold = 1,
                             p_treshold = 0.05,
                             tissue = miR.tissue_expression)
+# Check the number of DEGs:
+table(miR.Ca11_6h.res$sig_df$significance) # 15 down-regulated, 8 up-regulated
+
+# Save to excel
 openxlsx::write.xlsx(miR.Ca11_6h.res[c(1:2)],
                      file.path(results_dir, miR.folder, date, tables_dir, "Ca11_6h_miR_expr.xlsx"))
 
@@ -137,9 +137,13 @@ openxlsx::write.xlsx(miR.Ca11_6h.res[c(1:2)],
 miR.Cp11_6h.res <- miR_results(miR.DESeq.6h$dds,
                            contrast = list("condition_CP11_vs_ctrl"),
                            name = c(''),
-                           lfc_treshold = 1.5,
+                           lfc_treshold = 1,
                            p_treshold = 0.05,
                            tissue = miR.tissue_expression)
+# Check the number of DEGs:
+table(miR.Cp11_6h.res$sig_df$significance) # 4 down-regulated, 2 up-regulated
+
+# Save to excel
 openxlsx::write.xlsx(miR.Cp11_6h.res[c(1:2)],
                      file.path(results_dir, miR.folder, date, tables_dir, "Cp11_6h_miR_expr.xlsx"))
 
@@ -147,9 +151,13 @@ openxlsx::write.xlsx(miR.Cp11_6h.res[c(1:2)],
 miR.Cp51_6h.res <- miR_results(miR.DESeq.6h$dds,
                            contrast = list("condition_CP51_vs_ctrl"),
                            name = c(''),
-                           lfc_treshold = 1.5,
+                           lfc_treshold = 1,
                            p_treshold = 0.05,
                            tissue = miR.tissue_expression)
+# Check the number of DEGs:
+table(miR.Cp51_6h.res$sig_df$significance) # 1 up-regulated
+
+# Save to excel
 openxlsx::write.xlsx(miR.Cp51_6h.res[c(1:2)],
                      file.path(results_dir, miR.folder, date, tables_dir, "Cp51_6h_miR_expr.xlsx"))
 
@@ -157,29 +165,28 @@ openxlsx::write.xlsx(miR.Cp51_6h.res[c(1:2)],
 ##############################################
 # 3.) Visualise DESeq2 results               #
 ##############################################
-
 (miR.Ca11_1h.res$plot <- miRNA_plot(miR.Ca11_1h.res$sig_df))
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_1h_plot.png"),
        plot = miR.Ca11_1h.res$plot, width = 10, height = 8, units = 'in')
 
 (miR.Ca11_6h.res$plot <- miRNA_plot(miR.Ca11_6h.res$sig_df))
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_plot.png"),
-              plot = miR.Ca11_6h.res$plot, width = 10, height = 8, units = 'in')
+              plot = miR.Ca11_6h.res$plot, width = 10, height = 14, units = 'in')
 
 (miR.Cp11_6h.res$plot <- miRNA_plot(miR.Cp11_6h.res$sig_df))
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp11_6h_plot.png"),
-       plot = miR.Cp11_6h.res$plot, width = 10, height = 8, units = 'in')
+       plot = miR.Cp11_6h.res$plot, width = 10, height = 10, units = 'in')
 
 (miR.Cp51_6h.res$plot <- miRNA_plot(miR.Cp51_6h.res$sig_df))
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_plot.png"),
-       plot = miR.Cp51_6h.res$plot, width = 10, height = 8, units = 'in')
+       plot = miR.Cp51_6h.res$plot, width = 10, height = 4, units = 'in')
 
 ##############################################
 # 3.) Check miRNA target genes               #
 ##############################################
 # C.albicans (1h)
 miR.Ca11_1h.targets <- list(
-  predicted = require_file(file.path(data_dir,miR.folder,"miRWalk_targets_CA11_1h.csv"))
+  predicted = require_file(file.path(data_dir,miR.folder,"miRWalk_targets_CA11_1h_padj.csv"))
   )
 miR.Ca11_1h.targets$validated <- miR.Ca11_1h.targets$predicted %>% 
   dplyr::filter(validated != "")
@@ -202,11 +209,11 @@ miR.Ca11_1h.targets <- lapply(miR.Ca11_1h.targets, function(x){
 miR.Ca11_1h.targets_filtered <- lapply(miR.Ca11_1h.targets, function(x){
   x %>% 
     dplyr::inner_join(miR.Ca11_1h.res$sig_df[,c(7,1,2,5,6,8,9,10,11,12)], by = c("mirnaid" = "miRname")) %>% 
-    dplyr::inner_join(Ca11_1h.res$sig_df[,c(1,2,5,8)], by = c("genesymbol" = "geneID"),
+    dplyr::inner_join(Ca11_1h.res$sig_df[,c(1,2,5,6,8)], by = c("genesymbol" = "geneID"),
                       suffix = c(".miR","")) %>% 
     dplyr::rename(miRname = mirnaid) %>%
-    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR,
-                  genesymbol, baseMean, log2FoldChange, pvalue,
+    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR, padj.miR,
+                  genesymbol, baseMean, log2FoldChange, pvalue, padj,
                   binding_site, TarBaseAccession, .before = 1) %>% 
     dplyr::filter(log2FoldChange > 0 & log2FoldChange.miR < 0 |
                     log2FoldChange < 0 & log2FoldChange.miR > 0)
@@ -217,7 +224,7 @@ openxlsx::write.xlsx(miR.Ca11_1h.targets_filtered[c(1:2)],
 
 # C. albicans (6h)
 miR.Ca11_6h.targets <- list(
-  predicted = require_file(file.path(data_dir,miR.folder, "miRWalk_targets_CA11_6h.csv"))
+  predicted = require_file(file.path(data_dir,miR.folder, "miRWalk_targets_CA11_6h_padj.csv"))
 )
 miR.Ca11_6h.targets$validated <- miR.Ca11_6h.targets$predicted %>% 
   dplyr::filter(validated != "")
@@ -240,11 +247,11 @@ miR.Ca11_6h.targets <- lapply(miR.Ca11_6h.targets, function(x){
 miR.Ca11_6h.targets_filtered <- lapply(miR.Ca11_6h.targets, function(x){
   x %>% 
     dplyr::inner_join(miR.Ca11_6h.res$sig_df[,c(7,1,2,5,6,8,9,10,11,12)], by = c("mirnaid" = "miRname")) %>% 
-    dplyr::inner_join(Ca11_6h.res$sig_df[,c(1,2,5,8)], by = c("genesymbol" = "geneID"),
+    dplyr::inner_join(Ca11_6h.res$sig_df[,c(1,2,5,6,8)], by = c("genesymbol" = "geneID"),
                       suffix = c(".miR","")) %>% 
     dplyr::rename(miRname = mirnaid) %>%
-    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR,
-                  genesymbol, baseMean, log2FoldChange, pvalue,
+    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR, padj.miR,
+                  genesymbol, baseMean, log2FoldChange, pvalue, padj,
                   binding_site, TarBaseAccession, .before = 1) %>% 
     dplyr::filter(log2FoldChange > 0 & log2FoldChange.miR < 0 |
                     log2FoldChange < 0 & log2FoldChange.miR > 0)
@@ -255,7 +262,7 @@ openxlsx::write.xlsx(miR.Ca11_6h.targets_filtered[c(1:2)],
 
 # C.parapsilosis MOI 1:1 (6h)
 miR.Cp11_6h.targets <- list(
-  predicted = require_file(file.path(data_dir, miR.folder, "miRWalk_targets_CP11_6h.csv"))
+  predicted = require_file(file.path(data_dir, miR.folder, "miRWalk_targets_CP11_6h_padj.csv"))
 )
 
 miR.Cp11_6h.targets$validated <- miR.Cp11_6h.targets$predicted %>% 
@@ -279,11 +286,11 @@ miR.Cp11_6h.targets <- lapply(miR.Cp11_6h.targets, function(x){
 miR.Cp11_6h.targets_filtered <- lapply(miR.Cp11_6h.targets, function(x){
   x %>% 
     dplyr::inner_join(miR.Cp11_6h.res$sig_df[,c(7,1,2,5,6,8,9,10,11,12)], by = c("mirnaid" = "miRname")) %>% 
-    dplyr::inner_join(Cp11_6h.res$sig_df[,c(1,2,5,8)], by = c("genesymbol" = "geneID"),
+    dplyr::inner_join(Cp11_6h.res$sig_df[,c(1,2,5,6,8)], by = c("genesymbol" = "geneID"),
                       suffix = c(".miR","")) %>% 
     dplyr::rename(miRname = mirnaid) %>%
-    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR,
-                  genesymbol, baseMean, log2FoldChange, pvalue,
+    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR, padj.miR,
+                  genesymbol, baseMean, log2FoldChange, pvalue, padj,
                   binding_site, TarBaseAccession, .before = 1) %>% 
     dplyr::filter(log2FoldChange > 0 & log2FoldChange.miR < 0 |
                     log2FoldChange < 0 & log2FoldChange.miR > 0)
@@ -295,7 +302,7 @@ openxlsx::write.xlsx(miR.Cp11_6h.targets_filtered[c(1:2)],
 
 # C.parapsilosis MOI 5:1 (6h)
 miR.Cp51_6h.targets <- list(
-  predicted = require_file(file.path(data_dir, miR.folder, "miRWalk_targets_CP51_6h.csv"))
+  predicted = require_file(file.path(data_dir, miR.folder, "miRWalk_targets_CP51_6h_padj.csv"))
 )
 
 miR.Cp51_6h.targets$validated <- miR.Cp51_6h.targets$predicted %>% 
@@ -319,18 +326,18 @@ miR.Cp51_6h.targets <- lapply(miR.Cp51_6h.targets, function(x){
 miR.Cp51_6h.targets_filtered <- lapply(miR.Cp51_6h.targets, function(x){
   x %>% 
     dplyr::inner_join(miR.Cp51_6h.res$sig_df[,c(7,1,2,5,6,8,9,10,11,12)], by = c("mirnaid" = "miRname")) %>% 
-    dplyr::inner_join(Cp51_6h.res$sig_df[,c(1,2,5,8)], by = c("genesymbol" = "geneID"),
+    dplyr::inner_join(Cp51_6h.res$sig_df[,c(1,2,5,6,8)], by = c("genesymbol" = "geneID"),
                       suffix = c(".miR","")) %>% 
     dplyr::rename(miRname = mirnaid) %>%
-    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR,
-                  genesymbol, baseMean, log2FoldChange, pvalue,
+    dplyr::relocate(miRname, baseMean.miR, log2FoldChange.miR, pvalue.miR, padj.miR,
+                  genesymbol, baseMean, log2FoldChange, pvalue, padj,
                   binding_site, TarBaseAccession, .before = 1) %>% 
     dplyr::filter(log2FoldChange > 0 & log2FoldChange.miR < 0 |
                     log2FoldChange < 0 & log2FoldChange.miR > 0)
 })
 
-openxlsx::write.xlsx(miR.Cp11_6h.targets_filtered[c(1:2)],
-                     file.path(results_dir, miR.folder, date, tables_dir, "Cp11_6h_miR_targets.xlsx"))
+openxlsx::write.xlsx(miR.Cp51_6h.targets_filtered[c(1:2)],
+                     file.path(results_dir, miR.folder, date, tables_dir, "Cp51_6h_miR_targets.xlsx"))
 
 
 ##############################################
@@ -373,10 +380,10 @@ ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_Predicted
 # 6.) Overrepresentation analysis (ORA) of miRNA target genes                  #
 ################################################################################
 miR.Ca11_6h.genelist <- get_genelist(.df = Ca11_6h.res$df,
-                                    .filter = Ca11_6h.res$df[["geneID"]] %in% 
-                                      miR.Ca11_6h.targets_filtered$predicted$genesymbol,
-                                    .value = "stat",
-                                    .name = "entrezID")
+                                     .filter = Ca11_6h.res$df[["geneID"]] %in% 
+                                      unique(miR.Ca11_6h.targets_filtered$predicted$genesymbol),
+                                     .value = "stat",
+                                     .name = "entrezID")
 # Ca11 - 6h
 miR.Ca11_6h.KEGG <- run_ora(.interest = miR.Ca11_6h.genelist$interest,
                             .background = miR.Ca11_6h.genelist$background,
@@ -403,6 +410,17 @@ for (i in c('BP','CC','MF')) {
                                           as.character(i), treshold = .9)
 }
 
+for (i in c('BP','CC','MF')) {
+  # write similarity matrix
+  write.xlsx(miR.Ca11_6h.simm[[i]]$simM,
+             file.path(results_dir, miR.folder, date, tables_dir, 
+                       paste0("miR_targets_Ca11_6h_",i,"_similarity_matrix.xlsx")))
+  # write reduced similarity matrix
+  write.xlsx(miR.Ca11_6h.simm[[i]]$reduced,
+             file.path(results_dir, miR.folder, date, tables_dir, 
+                       paste0("miR_targets_Ca11_6h_",i,"_reduced_clusters.xlsx")))
+}
+
 miR.Ca11_6h.GO_network <- list()
 for (i in c('BP','CC','MF')) {
   miR.Ca11_6h.GO_network[[i]] <- get_cluster_representative(
@@ -410,8 +428,15 @@ for (i in c('BP','CC','MF')) {
                           by = c("ID" = "go")) %>% 
       dplyr::rename(Name = term, core_enrichment = geneID, geneRatio = GeneRatio),
     .degs = miR.Ca11_6h.targets_filtered$predicted %>% 
-      dplyr::rename(Symbol = genesymbol))
+      dplyr::rename(geneID = genesymbol))
 } 
+#Save data frames to excel sheets
+for (i in c('BP','CC','MF')) {
+  # write similarity matrix
+  write.xlsx(miR.Ca11_6h.GO_network[[i]], 
+             file.path(results_dir, miR.folder, date, tables_dir, 
+                       paste0("miR_targets_Ca11_6h_",i,"cluster_representatives.xlsx")))
+}
 
 # add GO semsim plot to each category
 (miR.Ca11_6h.GO_network$BP_simplot <- make_GO_simplot(miR.Ca11_6h.GO_network$BP))
@@ -426,113 +451,128 @@ ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_CC_simplo
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_MF_simplot.png"),
        plot = miR.Ca11_6h.GO_network$MF_simplot, width = 10, height = 8, units = 'in')
 
-# C.parapsilosis MOI 1:1 (6h)
-miR.Cp11_6h.genelist <- get_genelist(.df = Cp11_6h.res$df,
-                                    .filter = Cp11_6h.res$df[["geneID"]] %in% 
-                                      miR.Cp11_6h.targets_filtered$predicted$genesymbol,
-                                    .value = "stat",
-                                    .name = "entrezID")
-
-# No enriched term under specified p.adjust cutoff
-miR.Cp11_6h.KEGG <- run_ora(.interest = miR.Cp11_6h.genelist$interest,
-                           .background = miR.Cp11_6h.genelist$background,
-                           .pathways = kegg_pathways)
-miR.Cp11_6h.KEGG <- c(miR.Cp11_6h.KEGG$ora,
-                       extract_ora_results(.ora = miR.Cp11_6h.KEGG$ora,
-                                           .db =  kegg_pathways))
-
-# No enriched term under specified p.adjust cutoff
-miR.Cp11_6h.GO <- run_ora(.interest = miR.Cp11_6h.genelist$interest,
-                         .background = miR.Cp11_6h.genelist$background,
-                         .pathways = go_terms)
-miR.Cp11_6h.GO <- c(miR.Cp11_6h.GO$ora,
-                    extract_ora_results(.ora = miR.Cp11_6h.GO$ora,
-                                        .db = go_terms))
+# # C.parapsilosis MOI 1:1 (6h)
+# miR.Cp11_6h.genelist <- get_genelist(.df = Cp11_6h.res$df,
+#                                     .filter = Cp11_6h.res$df[["geneID"]] %in% 
+#                                       miR.Cp11_6h.targets_filtered$predicted$genesymbol,
+#                                     .value = "stat",
+#                                     .name = "entrezID")
+# 
+# # No enriched term under specified p.adjust cutoff
+# miR.Cp11_6h.KEGG <- run_ora(.interest = miR.Cp11_6h.genelist$interest,
+#                            .background = miR.Cp11_6h.genelist$background,
+#                            .pathways = kegg_pathways)
+# miR.Cp11_6h.KEGG <- c(miR.Cp11_6h.KEGG$ora,
+#                        extract_ora_results(.ora = miR.Cp11_6h.KEGG$ora,
+#                                            .db =  kegg_pathways))
+# 
+# # No enriched term under specified p.adjust cutoff
+# miR.Cp11_6h.GO <- run_ora(.interest = miR.Cp11_6h.genelist$interest,
+#                          .background = miR.Cp11_6h.genelist$background,
+#                          .pathways = go_terms)
+# miR.Cp11_6h.GO <- c(miR.Cp11_6h.GO$ora,
+#                     extract_ora_results(.ora = miR.Cp11_6h.GO$ora,
+#                                         .db = go_terms))
 
 # C.parapsilosis MOI 5:1 (6h)
-miR.Cp51_6h.genelist <- get_genelist(.df = Cp51_6h.res$df,
-                                    .filter = Cp51_6h.res$df[["geneID"]] %in% 
-                                      miR.Cp51_6h.targets_filtered$predicted$genesymbol,
-                                    .value = "stat",
-                                    .name = "entrezID")
-
-miR.Cp51_6h.KEGG <- run_ora(.interest = miR.Cp51_6h.genelist$interest,
-                            .background = miR.Cp51_6h.genelist$background,
-                            .pathways = kegg_pathways)
-miR.Cp51_6h.KEGG <- c(miR.Cp51_6h.KEGG$ora,
-                      extract_ora_results(.ora = miR.Cp51_6h.KEGG$ora,
-                                          .db =  kegg_pathways))
-
-miR.Cp51_6h.GO <- run_ora(.interest = miR.Cp51_6h.genelist$interest,
-                          .background = miR.Cp51_6h.genelist$background,
-                          .pathways = go_terms)
-miR.Cp51_6h.GO <- c(miR.Cp51_6h.GO$ora,
-                    extract_ora_results(.ora = miR.Cp51_6h.GO$ora,
-                                        .db = go_terms))
-
-miR.Cp51_6h.GO <- c(miR.Cp51_6h.GO,
-                    miR.Cp51_6h.GO$sig_df %>%
-                      dplyr::group_split(Database) %>% 
-                      setNames(c('BP','CC','MF')))
-
-miR.Cp51_6h.simm <- list()
-for (i in c('BP','CC','MF')) {
-  miR.Cp51_6h.simm[[i]] <- make_simMatrix(miR.Cp51_6h.GO[[i]], 
-                                          as.character(i), treshold = .9)
-}
-
-miR.Cp51_6h.GO_network <- list()
-for (i in c('BP','CC','MF')) {
-  miR.Cp51_6h.GO_network[[i]] <- get_cluster_representative(
-    .cluster = inner_join(miR.Cp51_6h.GO[[i]], miR.Cp51_6h.simm[[i]]$reduced, 
-                          by = c("ID" = "go")) %>% 
-      dplyr::rename(Name = term, core_enrichment = geneID, geneRatio = GeneRatio),
-    .degs = miR.Cp51_6h.targets_filtered$predicted %>% 
-      dplyr::rename(Symbol = genesymbol))
-} 
-
-# add GO semsim plot to each category
-(miR.Cp51_6h.GO_network$BP_simplot <- make_GO_simplot(miR.Cp51_6h.GO_network$BP))
-ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_BP_simplot.png"),
-       plot = miR.Cp51_6h.GO_network$BP_simplot, width = 10, height = 8, units = 'in')
-
-(miR.Cp51_6h.GO_network$CC_simplot <- make_GO_simplot(miR.Cp51_6h.GO_network$CC))
-ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_CC_simplot.png"),
-       plot = miR.Cp51_6h.GO_network$CC_simplot, width = 10, height = 8, units = 'in')
-
-(miR.Cp51_6h.GO_network$MF_simplot <- make_GO_simplot(miR.Cp51_6h.GO_network$MF))
-ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_MF_simplot.png"),
-       plot = miR.Cp51_6h.GO_network$MF_simplot, width = 10, height = 8, units = 'in')
+# miR.Cp51_6h.genelist <- get_genelist(.df = Cp51_6h.res$df,
+#                                     .filter = Cp51_6h.res$df[["geneID"]] %in% 
+#                                       miR.Cp51_6h.targets_filtered$predicted$genesymbol,
+#                                     .value = "stat",
+#                                     .name = "entrezID")
+# 
+# miR.Cp51_6h.KEGG <- run_ora(.interest = miR.Cp51_6h.genelist$interest,
+#                             .background = miR.Cp51_6h.genelist$background,
+#                             .pathways = kegg_pathways)
+# miR.Cp51_6h.KEGG <- c(miR.Cp51_6h.KEGG$ora,
+#                       extract_ora_results(.ora = miR.Cp51_6h.KEGG$ora,
+#                                           .db =  kegg_pathways))
+# 
+# miR.Cp51_6h.GO <- run_ora(.interest = miR.Cp51_6h.genelist$interest,
+#                           .background = miR.Cp51_6h.genelist$background,
+#                           .pathways = go_terms)
+# miR.Cp51_6h.GO <- c(miR.Cp51_6h.GO$ora,
+#                     extract_ora_results(.ora = miR.Cp51_6h.GO$ora,
+#                                         .db = go_terms))
+# 
+# miR.Cp51_6h.GO <- c(miR.Cp51_6h.GO,
+#                     miR.Cp51_6h.GO$sig_df %>%
+#                       dplyr::group_split(Database) %>% 
+#                       setNames(c('BP','CC','MF')))
+# 
+# miR.Cp51_6h.simm <- list()
+# for (i in c('BP','CC','MF')) {
+#   miR.Cp51_6h.simm[[i]] <- make_simMatrix(miR.Cp51_6h.GO[[i]], 
+#                                           as.character(i), treshold = .9)
+# }
+# 
+# miR.Cp51_6h.GO_network <- list()
+# for (i in c('BP','CC','MF')) {
+#   miR.Cp51_6h.GO_network[[i]] <- get_cluster_representative(
+#     .cluster = inner_join(miR.Cp51_6h.GO[[i]], miR.Cp51_6h.simm[[i]]$reduced, 
+#                           by = c("ID" = "go")) %>% 
+#       dplyr::rename(Name = term, core_enrichment = geneID, geneRatio = GeneRatio),
+#     .degs = miR.Cp51_6h.targets_filtered$predicted %>% 
+#       dplyr::rename(Symbol = genesymbol))
+# } 
+# 
+# # add GO semsim plot to each category
+# (miR.Cp51_6h.GO_network$BP_simplot <- make_GO_simplot(miR.Cp51_6h.GO_network$BP))
+# ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_BP_simplot.png"),
+#        plot = miR.Cp51_6h.GO_network$BP_simplot, width = 10, height = 8, units = 'in')
+# 
+# (miR.Cp51_6h.GO_network$CC_simplot <- make_GO_simplot(miR.Cp51_6h.GO_network$CC))
+# ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_CC_simplot.png"),
+#        plot = miR.Cp51_6h.GO_network$CC_simplot, width = 10, height = 8, units = 'in')
+# 
+# (miR.Cp51_6h.GO_network$MF_simplot <- make_GO_simplot(miR.Cp51_6h.GO_network$MF))
+# ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Cp51_6h_MF_simplot.png"),
+#        plot = miR.Cp51_6h.GO_network$MF_simplot, width = 10, height = 8, units = 'in')
 
 
 ################################################################################
 # 7.) Network analysis miRNA target genes                                      #
 ################################################################################
+# C.albicans MOI 1:1 (6h)
+predicted_target_ID <- Ca11_6h.cluster$df %>%
+  dplyr::select(ID, Name, core_enrichment) %>%
+  tidyr::separate_rows(core_enrichment, sep = "/") %>%
+  dplyr::filter(core_enrichment %in% miR.Ca11_6h.targets_filtered$predicted$genesymbol) %>%
+  dplyr::group_by(ID) %>%
+  dplyr::summarise(Name = first(Name), n = n()) %>%
+  dplyr::arrange(desc(n)) %>% 
+  dplyr::mutate(rank = row_number())
 
-# interest_ID <- Ca11_6h.combinedGSEA %>% 
-#   dplyr::select(ID, Name, core_enrichment) %>%
-#   tidyr::separate_rows(core_enrichment, sep = "/") %>% 
-#   dplyr::filter(core_enrichment %in% miR.Ca11_6h.targets_filtered$validated$genesymbol) %>%
-#   dplyr::group_by(ID) %>% 
-#   dplyr::summarise(Name = first(Name), n = n()) %>% 
-#   dplyr::arrange(desc(n))
+validated_target_ID <- Ca11_6h.cluster$df %>%
+  dplyr::select(ID, Name, core_enrichment) %>%
+  tidyr::separate_rows(core_enrichment, sep = "/") %>%
+  dplyr::filter(core_enrichment %in% miR.Ca11_6h.targets_filtered$validated$genesymbol) %>%
+  dplyr::group_by(ID) %>%
+  dplyr::summarise(Name = first(Name), n = n()) %>%
+  dplyr::arrange(desc(n)) %>% 
+  dplyr::mutate(rank = row_number())
 
-interest_ID <- c("GO:0002521" = "LEUKOCYTE_DIFFERENTIATION",
-                 "GO:0070848" = "RESPONSE_TO_GROWTH_FACTOR",
-                 "M5890" = "TNFA_SIGNALING_VIA_NFKB",
-                 "GO:0001816" = "CYTOKINE_PRODUCTION",
-                 "GO:0006954" = "INFLAMMATORY_RESPONSE")
+interest_ID_df <- dplyr::inner_join(predicted_target_ID, validated_target_ID, 
+                                 by = c("ID", "Name"), suffix = c(".predicted",".validated")) %>%
+  dplyr::mutate(rank = rank.predicted + rank.validated) %>%
+  dplyr::arrange(rank)
+
+write.xlsx(interest_ID_df,
+           file.path(results_dir, miR.folder, date, tables_dir, "Ca11_6h_miR_targets_ID.xlsx"))
+
+interest_ID <- dplyr::pull(interest_ID_df, Name, name = ID)[c(1:5)]
 interest_genes <- unique(miR.Ca11_6h.targets_filtered$validated$genesymbol)
 
 library(scales)
-col_fun <- col_numeric(palette = c("blue", "white", "red"), domain = range(Ca11_6h.combinedGSEA$NES))
+col_fun <- col_numeric(palette = c("blue", "white", "red"), domain = c(-1*max(Ca11_6h.combinedGSEA$NES),
+                                                                      0, max(Ca11_6h.combinedGSEA$NES)))
 colors <- col_fun(Ca11_6h.combinedGSEA[which(Ca11_6h.combinedGSEA$ID %in% names(interest_ID)),]$NES)
 
 
 cluster_palette <- setNames(colors, 
-                            c("LEUKOCYTE_DIFFERENTIATION","RESPONSE_TO_GROWTH_FACTOR",
-                              "TNFA_SIGNALING_VIA_NFKB","CYTOKINE_PRODUCTION",
-                              "INFLAMMATORY_RESPONSE"))
+                            c("TNFA_SIGNALING_VIA_NFKB","NEGATIVE_REGULATION_OF_CELL_POPULATION_PROLIFERATION",
+                              "RESPONSE_TO_BACTERIUM","CELLULAR_RESPONSE_TO_LIPID",
+                              "REGULATION_OF_PROTEIN_KINASE_ACTIVITY"))
 
 # PANC1 - chronic acidosis
 Ca11_6h.circplot <- getCircplotData(.cluster = Ca11_6h.cluster$df,
@@ -546,9 +586,26 @@ plotCircplot(.path = file.path(results_dir, miR.folder, date, plots_dir, "Ca11_6
              .color = Ca11_6h.circplot$grid.col,
              .links = Ca11_6h.circplot$border.mat,
              .labels = c(interest_ID, interest_genes))
+# Write data matrix
+Ca11_6h.circplot_df <- merge(
+  as.data.frame(Ca11_6h.circplot$data.mat) %>% dplyr::mutate(genesymbol = row.names(.)),
+  as.data.frame(Ca11_6h.circplot$data.mat) %>% dplyr::mutate(genesymbol = row.names(.)),
+  by = "genesymbol", suffixes = c("",".weight")) %>% 
+  dplyr::mutate(across(TNFA_SIGNALING_VIA_NFKB:REGULATION_OF_PROTEIN_KINASE_ACTIVITY, 
+                       ~ifelse(.x == 0, F, T))) %>% 
+  dplyr::left_join(Ca11_6h.res$sig_df[,c("geneID","log2FoldChange","padj")],
+                   by = c("genesymbol" = "geneID")) %>% 
+  dplyr::left_join(miR.Ca11_6h.targets_filtered$validated[,c("genesymbol","miRname","log2FoldChange.miR", "padj.miR")],
+                   by = c("genesymbol")) %>% 
+  dplyr::relocate(genesymbol, log2FoldChange, padj, miRname, log2FoldChange.miR, padj.miR,
+                  .before = 1)
+
+write.xlsx(Ca11_6h.circplot_df,
+           file.path(results_dir, miR.folder, date, tables_dir, 
+                     "Ca11_6h_miR_targets_score_circosplot.xlsx"))
 
 miR.Ca11_6h.barplot <- miR.Ca11_6h.targets_filtered$validated %>% 
-  dplyr::filter(genesymbol %in% c("EPHA2","MAP2K3","RORA","TRIB1","VEGFA","TUBB2A")) %>%
+  dplyr::filter(genesymbol %in% c("TRIB1","LDLR","BTG1","SOD2","MXD1", "PER2", "ABL2","SERTAD1")) %>%
   dplyr::select(miRname, genesymbol, log2FoldChange, log2FoldChange.miR) %>%
   tidyr::pivot_longer(cols = c(log2FoldChange, log2FoldChange.miR), 
                names_to = "Type",
@@ -556,27 +613,10 @@ miR.Ca11_6h.barplot <- miR.Ca11_6h.targets_filtered$validated %>%
   dplyr::mutate(Type = ifelse(Type == "log2FoldChange.miR", "miRNA", "mRNA")) %>% 
   dplyr::mutate(genesymbol = ifelse(Type == "mRNA", genesymbol, miRname)) %>% 
   dplyr::mutate(genesymbol = factor(genesymbol, 
-                                    levels = c("hsa-let-7c-3p","hsa-miR-1277-5p","hsa-miR-128-1-5p","hsa-miR-195-3p",
-                                               "EPHA2","MAP2K3","RORA","TRIB1","VEGFA","TUBB2A")))
-
-plot_miRNA_targets <- function(miRNA_data) {
-  ggplot(miRNA_data, aes(x = genesymbol, y = log2FC)) +
-    geom_bar(aes(fill = Type), show.legend = F,
-             stat = "identity", position = position_dodge(width = 0.7), 
-             width = 0.6, color = "black") +
-    scale_fill_manual(values = c("miRNA" = "purple", "mRNA" = "steelblue")) +
-    facet_wrap(~miRname,scales = "free_x") +
-    labs(title = "",
-         x = "", y = expression(paste(log[2], 'FoldChange'))) +
-    geom_hline(yintercept = c(0), 
-               linetype = 'solid', size = .5) +
-    theme_classic() +
-    theme(axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
-          axis.text.y = element_text(size = 12),
-          strip.background = element_blank(),
-          strip.text = element_text(size = 12, colour = "black"),
-          panel.border = element_rect(colour = "black", fill = NA, size = 1))
-}
+                                    levels = c("hsa-let-7a-3p","hsa-let-7b-3p","hsa-miR-26a-1-3p",
+                                               "hsa-miR-27b-5p","hsa-miR-301a-5p","hsa-miR-30c-1-3p",
+                                               "TRIB1","LDLR","BTG1","SOD2","MXD1",
+                                               "PER2", "ABL2","SERTAD1")))
 
 (miRNA_plots <- plot_miRNA_targets(miR.Ca11_6h.barplot))
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_targets_barplot.png"),

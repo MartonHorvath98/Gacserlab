@@ -33,6 +33,11 @@ if (!("dplyr" %in% installed.packages())) {
   BiocManager::install("dplyr", update = FALSE)
 }
 library(dplyr)
+# openxlsx
+if (!("openxlsx" %in% installed.packages())) {
+  BiocManager::install("openxlsx", update = FALSE)
+}
+library(openxlsx)
 # DESeq2
 if (!("DESeq2" %in% installed.packages())) {
   BiocManager::install("DESeq2", update = FALSE)
@@ -48,6 +53,11 @@ if (!("ggplot2" %in% installed.packages())) {
   BiocManager::install("ggplot2", update = FALSE)
 }
 library(ggplot2)
+# scales
+if (!("scales" %in% installed.packages())) {
+  BiocManager::install("scales", update = FALSE)
+}
+library(scales)
 # ggbiplot
 if (!("ggbiplot" %in% installed.packages())) {
   devtools::install_github("vqv/ggbiplot")
@@ -153,11 +163,6 @@ if (!("rrvgo" %in% installed.packages())) {
   BiocManager::install("rrvgo", update = FALSE)
 }
 library(rrvgo)
-# GOSim
-if (!("GOSim" %in% installed.packages())) {
-  BiocManager::install("GOSim", update = FALSE)
-}
-library(GOSim)
 # GOSemSim
 if (!("GOSemSim" %in% installed.packages())) {
   BiocManager::install("GOSemSim", update = FALSE)
@@ -168,3 +173,13 @@ if (!("igraph" %in% installed.packages())) {
   BiocManager::install("igraph", update = FALSE)
 }
 library(igraph)
+#arrow
+if (!("arrow" %in% installed.packages())) {
+  BiocManager::install("arrow", update = FALSE)
+}
+library(arrow)
+#circlize
+if (!("circlize" %in% installed.packages())) {
+  BiocManager::install("circlize", update = FALSE)
+}
+library(circlize)

@@ -38,7 +38,6 @@ get_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, pval_tr
   fdr <- fdrtool(tmp$stat, statistic = "normal", plot = F)
   tmp$padj <- p.adjust(fdr$pval, method = "BH")
   # Create a data frame from the results table
-  
   df <- data.frame(tmp, geneID = rownames(tmp), row.names = rownames(tmp))
   df <- df %>%
     dplyr::mutate(geneID = mapIds(org.Hs.eg.db, 
@@ -52,13 +51,13 @@ get_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, pval_tr
                                     column = "ENTREZID",
                                     multiVals = "first")) %>%
     dplyr::mutate(significance = dplyr::case_when(abs(log2FoldChange) > lfc_treshold & 
-                                                    pvalue > pval_treshold ~ 'log2FoldChange',
+                                                    padj > pval_treshold ~ 'log2FoldChange',
                                                   abs(log2FoldChange) < lfc_treshold & 
-                                                    pvalue < pval_treshold ~ 'Log10P',
+                                                    padj < pval_treshold ~ 'Log10P',
                                                   log2FoldChange < (-1)*lfc_treshold & 
-                                                    pvalue < pval_treshold ~ 'Signif. down-regulated',
+                                                    padj < pval_treshold ~ 'Signif. down-regulated',
                                                   log2FoldChange > lfc_treshold & 
-                                                    pvalue < pval_treshold ~ 'Signif. up-regulated',
+                                                    padj < pval_treshold ~ 'Signif. up-regulated',
                                                   T ~ 'NS')) %>%
     dplyr::relocate(c("geneID","entrezID"), .after = everything())
   
@@ -70,24 +69,24 @@ get_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, pval_tr
   return(list(df = df, sig_df = sig_df))
 }
 
-miR_results <- function(dds, contrast = NULL, name = NULL, 
-                        lfc_treshold, p_treshold, tissue){
-  res <- results(dds, contrast = contrast, name = name,
+miR_results <- function(dds, contrast = NULL, name = NULL, lfc_treshold, p_treshold, tissue){
+  # Extract results table
+  tmp <- results(dds, contrast = contrast, name = name,
                  independentFiltering = T, pAdjustMethod = "BH", alpha = 0.05)
-  fdr <- fdrtool(res$stat, statistic = "normal", plot = F)
-  res$padj <- p.adjust(fdr$pval, method = "BH")
-  
-  
-  df <- data.frame(res, miRname = rownames(res), row.names = rownames(res))
+  # Perform multiple testing correction
+  fdr <- fdrtool(tmp$stat, statistic = "normal", plot = F)
+  tmp$padj <- p.adjust(fdr$pval, method = "BH")
+  # Create a data frame from the results table
+  df <- data.frame(tmp, miRname = rownames(tmp), row.names = rownames(tmp))
   df <- df %>%
     dplyr::mutate(significance = dplyr::case_when(abs(log2FoldChange) > lfc_treshold & 
-                                                    pvalue > p_treshold ~ 'log2FoldChange',
+                                                    padj > p_treshold ~ 'log2FoldChange',
                                                   abs(log2FoldChange) < lfc_treshold & 
-                                                    pvalue < p_treshold ~ 'Log10P',
+                                                    padj < p_treshold ~ 'Log10P',
                                                   log2FoldChange < (-1)*lfc_treshold & 
-                                                    pvalue < p_treshold ~ 'Signif. down-regulated',
+                                                    padj < p_treshold ~ 'Signif. down-regulated',
                                                   log2FoldChange > lfc_treshold & 
-                                                    pvalue < p_treshold ~ 'Signif. up-regulated',
+                                                    padj < p_treshold ~ 'Signif. up-regulated',
                                                   T ~ 'NS')) %>% 
   dplyr::left_join(tissue, by = c("miRname" = "miRname"))
   
@@ -171,22 +170,30 @@ get_CategoryExpressionPlot <- function(results, sig_log2FC, sig_pval, targets,
           legend.position = 'none')  + 
     scale_x_continuous(expand = expansion(0.2)) + 
     geom_vline(xintercept = c(-1.5, 1.5), 
-               linetype = 'dotted', size = 1) + 
-    geom_hline(yintercept = -log10(0.05), 
-               linetype = 'dotted', size = 1)
+               linetype = 'dotted', size = 1) #+ 
+    #geom_hline(yintercept = -log10(0.05), 
+     #          linetype = 'dotted', size = 1)
   
   if (labels == "predicted") {
     plot <- plot +
       geom_label_repel(
         data = point.data, hjust = .5, vjust = .5, 
         colour = 'black', position = 'identity', 
-        show.legend = F, label = point.data[,"pairs"])
+        show.legend = F, label = point.data[,"pairs"],
+        max.overlaps = 100, min.segment.length = 0, size = 3,
+        arrow = arrow(type = "closed", angle = 15, length = unit(0.1,"in")),
+        box.padding = unit(0.5,"in"), point.padding = unit(0.1,"in"),
+        force = 1, direction = "both")
   } else {
     plot <- plot +
       geom_label_repel(
         data = label.data, hjust = .5, vjust = .5, 
         colour = 'black', position = 'identity', 
-        show.legend = F, label = label.data[,"pairs"])
+        show.legend = F, label = label.data[,"pairs"],
+        max.overlaps = 100, min.segment.length = 0, size = 3,
+        arrow = arrow(type = "closed", angle = 15, length = unit(0.1,"in")),
+        box.padding = unit(0.5,"in"), point.padding = unit(0.1,"in"),
+        force = 1, direction = "both")
   }
   
   return(plot)
@@ -256,7 +263,7 @@ extract_ora_results <- function(.ora, .db){
   
   # extract significant results: adjusted p-value < 0.05
   sig_df <- df %>% 
-    dplyr::filter(p.adjust < 0.1)
+    dplyr::filter(p.adjust < 0.05)
   
   #return data frames
   return(list("df" = df, "sig_df" = sig_df))
@@ -454,7 +461,8 @@ make_vulcanplot <- function(total, sig){
                  aes(x = log2FoldChange, 
                      y = -log10(pvalue), 
                      colour = significance)) 
-          + geom_point(mapping = aes(), inherit.aes = T, size = 2.5) 
+          + geom_point(mapping = aes(), alpha = .5,
+                       inherit.aes = T, size = 2.5) 
           + scale_color_manual(values = c(
             "NS" = "#c1c1c1",
             "Log10P" = '#363636',
@@ -463,19 +471,20 @@ make_vulcanplot <- function(total, sig){
             "Signif. down-regulated" = '#000f64'
           ))
           + labs(x = expression(paste(log[2], 'FoldChange')),
-                 y = expression(paste(log[10], italic('P')))) 
-          + theme(axis.title = element_text(size = 14), 
-                  axis.text = element_text(size = 14), 
-                  legend.position = 'none') 
+                 y = expression(paste(log[10], italic('P'))))
           + scale_x_continuous(expand = expansion(0.2))
           + geom_vline(xintercept = c(-1.5, 1.5), 
                        linetype = 'dotted', size = 1) 
-          + geom_hline(yintercept = -log10(0.05), 
-                       linetype = 'dotted', size = 1) 
+          # + geom_hline(yintercept = -log10(0.05), 
+          #              linetype = 'dotted', size = 1) 
           + geom_text(data = na.omit(sig), hjust = 0, vjust = 1.5, 
                       colour = 'black', position = 'identity', 
                       show.legend = F, check_overlap = T,
-                      label = na.omit(sig)[,"geneID"])))
+                      label = na.omit(sig)[,"geneID"])
+          + theme_minimal()
+          + theme(axis.title = element_text(size = 14), 
+                  axis.text = element_text(size = 14), 
+                  legend.position = 'none') ))
 }
 
 make_gseaplot <- function(data, type = NULL){
@@ -633,8 +642,8 @@ get_cluster_representative <- function(.cluster, .degs){
     dplyr::select(ID, Name, core_enrichment, cluster) %>%
     tidyr::separate_rows(core_enrichment, sep = "/")
   
-  linkage$logFC = .degs$log2FoldChange[match(linkage$core_enrichment, .degs$Symbol)]
-  linkage$padj = .degs$padj[match(linkage$core_enrichment, .degs$Symbol)]
+  linkage$logFC = .degs$log2FoldChange[match(linkage$core_enrichment, .degs$geneID)]
+  linkage$padj = .degs$padj[match(linkage$core_enrichment, .degs$geneID)]
   
   # calculate normalized term weight
   linkage$weight = abs(linkage$logFC)*(-log10(linkage$padj))
@@ -754,7 +763,7 @@ getCircplotData <- function(.cluster, .deg, .interest_cluster, .interest_cluster
     dplyr::left_join(.deg[,c("geneID","log2FoldChange","pvalue")],
                      by = c("core_enrichment" = "geneID")) %>% 
     dplyr::rowwise() %>%
-    # ...as a function of the z-score and adjusted p-value
+    # ...as a function of the log2FoldChange and adjusted p-value
     dplyr::mutate(weight = abs(log2FoldChange)*(-log10(pvalue))) %>% 
     dplyr::ungroup() %>% 
     dplyr::filter(complete.cases(.)) %>% 
@@ -762,11 +771,6 @@ getCircplotData <- function(.cluster, .deg, .interest_cluster, .interest_cluster
     dplyr::select(c("core_enrichment", "Name", "weight", "cluster")) %>%
     setNames(.,c("node1", "node2", "weight", "cluster")) %>%
     as.data.frame(.)
-  
-  # Transform input data in a adjacency matrix
-  adjacencyData <- with(linkage, table(node1, node2))
-  # circlize::chordDiagram(adjacencyData, transparency = 0.5)
-  
   
   # create a network visualization of gene and GO-term relationships
   net <- graph_from_data_frame(linkage)
@@ -804,8 +808,10 @@ getCircplotData <- function(.cluster, .deg, .interest_cluster, .interest_cluster
 }
 
 plotCircplot <- function(.path, .data, .color, .links, .labels){
-  png(.path,
-      width = 25, height = 15, res = 300, units = "in")
+  png(.path, 
+      width = 20, height = 12, res = 300, units = "in")
+  par(mfrow=c(1,1),mar=c(2,4,4,2), xpd = TRUE)
+  
   circos.par(start.degree = 90)
   circlize::chordDiagram(.data, annotationTrack = "grid",
                          grid.col = .color, transparency = 0.5,
@@ -818,7 +824,8 @@ plotCircplot <- function(.path, .data, .color, .links, .labels){
     
     # Label all 'to' sectors and only selected 'from' sectors
     if (sector_name %in% .labels) {
-      circos.text(CELL_META$xcenter, CELL_META$ylim[1], CELL_META$sector.index, 
+      circos.text(CELL_META$xcenter, CELL_META$ylim[1],
+                  str_wrap(gsub("_", " ", CELL_META$sector.index), 25), 
                   facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
     }
   }, bg.border = NA)
@@ -1173,4 +1180,23 @@ miRNA_target_plot <- function(data, targets){
                  legend.title = element_text(size = 14, face = 'bold', colour = 'black'),
                  legend.text = element_text(size = 14, colour = 'black'),
                  legend.position = 'bottom'))
+}
+
+plot_miRNA_targets <- function(miRNA_data) {
+  ggplot(miRNA_data, aes(x = genesymbol, y = log2FC)) +
+    geom_bar(aes(fill = Type), show.legend = F,
+             stat = "identity", position = position_dodge(width = 0.7), 
+             width = 0.6, color = "black") +
+    scale_fill_manual(values = c("miRNA" = "purple", "mRNA" = "steelblue")) +
+    facet_wrap(~miRname,scales = "free_x") +
+    labs(title = "",
+         x = "", y = expression(paste(log[2], 'FoldChange'))) +
+    geom_hline(yintercept = c(0), 
+               linetype = 'solid', size = .5) +
+    theme_classic() +
+    theme(axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 12),
+          strip.background = element_blank(),
+          strip.text = element_text(size = 12, colour = "black"),
+          panel.border = element_rect(colour = "black", fill = NA, size = 1))
 }

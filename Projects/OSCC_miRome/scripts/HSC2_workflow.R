@@ -154,7 +154,7 @@ Ca11_1h.res <- get_results(DESeq.1h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Ca11_1h.res$sig_df$significance) # 9 down-regulated, 4 up-regulated
+table(Ca11_1h.res$sig_df$significance) # 0 down-regulated, 4 up-regulated
 
 # Save results to excel files
 sapply(names(Ca11_1h.res), function(x){
@@ -171,7 +171,7 @@ Ca11_6h.res <- get_results(DESeq.6h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Ca11_6h.res$sig_df$significance) # 770 down-regulated, 480 up-regulated
+table(Ca11_6h.res$sig_df$significance) # 13 down-regulated, 157 up-regulated
 
 # Save results to excel files
 sapply(names(Ca11_6h.res), function(x){
@@ -187,7 +187,7 @@ Cp11_6h.res <- get_results(DESeq.6h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Cp11_6h.res$sig_df$significance) # 12 down-regulated, 26 up-regulated
+table(Cp11_6h.res$sig_df$significance) # 0 down-regulated, 0 up-regulated
 
 # Save results to excel files
 sapply(names(Cp11_6h.res), function(x){
@@ -204,7 +204,7 @@ Cp51_6h.res <- get_results(DESeq.6h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Cp51_6h.res$sig_df$significance) # 25 down-regulated, 66 up-regulated
+table(Cp51_6h.res$sig_df$significance) # 2 down-regulated, 46 up-regulated
 
 sapply(names(Cp51_6h.res), function(x){
   openxlsx::write.xlsx(Cp51_6h.res[[x]], 
@@ -308,7 +308,7 @@ Ca11_1h.ORA.KEGG <- c(Ca11_1h.ORA.KEGG,
                                           .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.ORA.KEGG[c(2:3)], 
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_ORA.KEGG.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_ORA_KEGG.xlsx"))
 
 Ca11_6h.ORA.KEGG <- list()
 Ca11_6h.ORA.KEGG <- run_ora(.interest = Ca11_6h.entrez$interest,
@@ -317,17 +317,18 @@ Ca11_6h.ORA.KEGG <- run_ora(.interest = Ca11_6h.entrez$interest,
 Ca11_6h.ORA.KEGG <- c(Ca11_6h.ORA.KEGG, extract_ora_results(.ora = Ca11_6h.ORA.KEGG$ora, .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.ORA.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_ORA.KEGG.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_ORA_KEGG.xlsx"))
 
-Cp11_6h.ORA.KEGG <- list()
-Cp11_6h.ORA.KEGG <- run_ora(.interest = Cp11_6h.entrez$interest,
-                         .background = Cp11_6h.entrez$background,
-                         .pathways = kegg_pathways)
-Cp11_6h.ORA.KEGG <- c(Cp11_6h.ORA.KEGG, 
-                      extract_ora_results(.ora = Cp11_6h.ORA.KEGG$ora, .db = kegg_pathways))
-# Save the results
-openxlsx::write.xlsx(Cp11_6h.ORA.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_ORA.KEGG.xlsx"))
+# No DEGs
+# Cp11_6h.ORA.KEGG <- list()
+# Cp11_6h.ORA.KEGG <- run_ora(.interest = Cp11_6h.entrez$interest,
+#                          .background = Cp11_6h.entrez$background,
+#                          .pathways = kegg_pathways)
+# Cp11_6h.ORA.KEGG <- c(Cp11_6h.ORA.KEGG, 
+#                       extract_ora_results(.ora = Cp11_6h.ORA.KEGG$ora, .db = kegg_pathways))
+# # Save the results
+# openxlsx::write.xlsx(Cp11_6h.ORA.KEGG[c(2:3)],
+#                      file.path(results_dir, folder, date, tables_dir, "Cp11_6h_ORA.KEGG.xlsx"))
 
 Cp51_6h.ORA.KEGG <- list()
 Cp51_6h.ORA.KEGG <- run_ora(.interest = Cp51_6h.entrez$interest,
@@ -337,29 +338,29 @@ Cp51_6h.ORA.KEGG <- c(Cp51_6h.ORA.KEGG,
                       extract_ora_results(.ora = Cp51_6h.ORA.KEGG$ora, .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.ORA.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_ORA.KEGG.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_ORA_KEGG.xlsx"))
 
 ## 3 Graphical analysis
 (Ca11_1h.ORA.KEGG$plot <- make_dotplot(Ca11_1h.ORA.KEGG$sig_df, 
                                        Ca11_1h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_ORA.KEGG.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_ORA_KEGG.png"), 
        plot = Ca11_1h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
 
 (Ca11_6h.ORA.KEGG$plot <- make_dotplot(Ca11_6h.ORA.KEGG$sig_df, 
                                        Ca11_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_ORA.KEGG.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_ORA_KEGG.png"), 
        plot = Ca11_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
 
-(Cp11_6h.ORA.KEGG$plot <- make_dotplot(Cp11_6h.ORA.KEGG$sig_df, 
-                                   Cp11_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_ORA.KEGG.png"), 
-      plot = Cp11_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
+# (Cp11_6h.ORA.KEGG$plot <- make_dotplot(Cp11_6h.ORA.KEGG$sig_df, 
+#                                    Cp11_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
+# ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_ORA.KEGG.png"), 
+#       plot = Cp11_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
 
 # no significant hits
-#(Cp51_6h.ORA.KEGG$plot <- make_dotplot(Cp51_6h.ORA.KEGG$sig_df, 
-#                                       Cp51_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-#ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_KEGG.png"), 
-#       plot = Cp51_6h.KEGG$plot, width = 10, height = 8, units = 'in')
+(Cp51_6h.ORA.KEGG$plot <- make_dotplot(Cp51_6h.ORA.KEGG$sig_df, 
+                                       Cp51_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
+ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_ORA_KEGG.png"), 
+       plot = Cp51_6h.KEGG$plot, width = 10, height = 8, units = 'in')
 
 
 ##############################################
@@ -375,7 +376,7 @@ Ca11_1h.KEGG <- c(Ca11_1h.KEGG,
                   extract_gsea_results(.gsea = Ca11_1h.KEGG$gsea, .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA.KEGG.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA_KEGG.xlsx"))
 
 Ca11_6h.KEGG <- list()
 Ca11_6h.KEGG <- run_gsea(
@@ -387,19 +388,20 @@ Ca11_6h.KEGG <- c(Ca11_6h.KEGG,
 
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA.KEGG.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA_KEGG.xlsx"))
 
-Cp11_6h.KEGG <- list()
-Cp11_6h.KEGG <- run_gsea(
-  .geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h.entrez$background))], 
-  .terms = kegg_pathways)
-
-Cp11_6h.KEGG <- c(Cp11_6h.KEGG, 
-                  extract_gsea_results(.gsea = Cp11_6h.KEGG$gsea, .db = kegg_pathways))
-
-# Save the results
-openxlsx::write.xlsx(Cp11_6h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA.KEGG.xlsx"))
+# No DEGs
+# Cp11_6h.KEGG <- list()
+# Cp11_6h.KEGG <- run_gsea(
+#   .geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h.entrez$background))], 
+#   .terms = kegg_pathways)
+# 
+# Cp11_6h.KEGG <- c(Cp11_6h.KEGG, 
+#                   extract_gsea_results(.gsea = Cp11_6h.KEGG$gsea, .db = kegg_pathways))
+# 
+# # Save the results
+# openxlsx::write.xlsx(Cp11_6h.KEGG[c(2:3)],
+#                      file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA.KEGG.xlsx"))
 
 Cp51_6h.KEGG <- list()
 Cp51_6h.KEGG <- run_gsea(
@@ -411,24 +413,21 @@ Cp51_6h.KEGG <- c(Cp51_6h.KEGG,
 
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA.KEGG.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA_KEGG.xlsx"))
 
 # Graphical analysis
 ## CA11 - 1h - no significant hits
 
 ## CA11 - 6h
 (Ca11_6h.KEGG$plot <- make_gseaplot(data =Ca11_6h.KEGG$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA.KEGG.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA_KEGG.png"), 
        plot = Ca11_6h.KEGG$plot, width = 10, height = 8, units = 'in')
 
-## CP11 - 6h
-(Cp11_6h.KEGG$plot <- make_gseaplot(data = Cp11_6h.KEGG$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GSEA.KEGG.png"), 
-       plot = Cp11_6h.KEGG$plot, width = 10, height = 8, units = 'in')
+## CP11 - 6h - no significant hits
 
 ## CP51 - 6h
 (Cp51_6h.KEGG$plot <- make_gseaplot(data = Cp51_6h.KEGG$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA.KEGG.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA_KEGG.png"), 
        plot = Cp51_6h.KEGG$plot, width = 10, height = 8, units = 'in')
 
 # ----------------------------- GO term -------------------------------- #
@@ -439,7 +438,7 @@ Ca11_1h.GO <- run_gsea(.geneset = Ca11_1h.entrez$background[!is.na(names(Ca11_1h
 Ca11_1h.GO <- c(Ca11_1h.GO, extract_gsea_results(.gsea = Ca11_1h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GO.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA_GO.xlsx"))
 
 Ca11_6h.GO <- list()
 Ca11_6h.GO <- run_gsea(.geneset = Ca11_6h.entrez$background[!is.na(names(Ca11_6h.entrez$background))], 
@@ -447,7 +446,7 @@ Ca11_6h.GO <- run_gsea(.geneset = Ca11_6h.entrez$background[!is.na(names(Ca11_6h
 Ca11_6h.GO <- c(Ca11_6h.GO, extract_gsea_results(.gsea = Ca11_6h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GO.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA_GO.xlsx"))
 
 Cp11_6h.GO <- list()
 Cp11_6h.GO <- run_gsea(.geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h.entrez$background))], 
@@ -455,7 +454,7 @@ Cp11_6h.GO <- run_gsea(.geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h
 Cp11_6h.GO <- c(Cp11_6h.GO, extract_gsea_results(.gsea = Cp11_6h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Cp11_6h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GO.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA_GO.xlsx"))
 
 Cp51_6h.GO <- list()
 Cp51_6h.GO <- run_gsea(.geneset = Cp51_6h.entrez$background[!is.na(names(Cp51_6h.entrez$background))], 
@@ -463,24 +462,24 @@ Cp51_6h.GO <- run_gsea(.geneset = Cp51_6h.entrez$background[!is.na(names(Cp51_6h
 Cp51_6h.GO <- c(Cp51_6h.GO, extract_gsea_results(.gsea = Cp51_6h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GO.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA_GO.xlsx"))
 
 # 1.2 Graphical analysis
 ## CA11 - 1h 
 (Ca11_1h.GO$plot <- make_gseaplot(data = Ca11_1h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_GO.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_GSEA_GO.png"), 
        plot = Ca11_1h.GO$plot, width = 10, height = 8, units = 'in')
 ## CA11 - 6h
 (Ca11_6h.GO$plot <- make_gseaplot(data = Ca11_6h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GO.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA_GO.png"), 
        plot = Ca11_6h.GO$plot, width = 10, height = 8, units = 'in')
 # CP11 - 6h
 (Cp11_6h.GO$plot <- make_gseaplot(Cp11_6h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GO.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GSEA_GO.png"), 
        plot = Cp11_6h.GO$plot, width = 10, height = 8, units = 'in')
 # CP51 - 6h
 (Cp51_6h.GO$plot <- make_gseaplot(Cp51_6h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GO.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA_GO.png"), 
        plot = Cp51_6h.GO$plot, width = 10, height = 8, units = 'in')
 
 # ----------------------------- MSigDB Hallmark ------------------------------ #
@@ -495,7 +494,7 @@ Ca11_1h.Hallmark <- c(Ca11_1h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_Hallmark.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA_Hallmark.xlsx"))
 ## Ca11 - 6h
 Ca11_6h.Hallmark <- list()
 Ca11_6h.Hallmark <- run_gsea(
@@ -506,7 +505,7 @@ Ca11_6h.Hallmark <- c(Ca11_6h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_Hallmark.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA_Hallmark.xlsx"))
 
 ## CP11 - 6h
 Cp11_6h.Hallmark <- list()
@@ -518,7 +517,7 @@ Cp11_6h.Hallmark <- c(Cp11_6h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Cp11_6h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_Hallmark.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA_Hallmark.xlsx"))
 
 ## CP51 - 6h
 Cp51_6h.Hallmark <- list()
@@ -530,24 +529,24 @@ Cp51_6h.Hallmark <- c(Cp51_6h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_Hallmark.xlsx"))
+                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA_Hallmark.xlsx"))
 
 ## 2.2 Graphical analysis
 ## CA11 - 1h
 (Ca11_1h.Hallmark$plot <- make_gseaplot(data = Ca11_1h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_Hallmark.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_GSEA_Hallmark.png"), 
        plot = Ca11_1h.Hallmark$plot, width = 10, height = 8, units = 'in')
 ## CA11 - 6h
 (Ca11_6h.Hallmark$plot <- make_gseaplot(data = Ca11_6h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_Hallmark.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA_Hallmark.png"), 
        plot = Ca11_6h.Hallmark$plot, width = 10, height = 8, units = 'in')
 ## CP11 - 6h
 (Cp11_6h.Hallmark$plot <- make_gseaplot(data = Cp11_6h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_Hallmark.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GSEA_Hallmark.png"), 
        plot = Cp11_6h.Hallmark$plot, width = 10, height = 8, units = 'in')
 ## CP51 - 6h
 (Cp51_6h.Hallmark$plot <- make_gseaplot(data = Cp51_6h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_Hallmark.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA_Hallmark.png"), 
        plot = Cp51_6h.Hallmark$plot, width = 10, height = 8, units = 'in')
 
 ##########################################################
@@ -577,6 +576,7 @@ if (!file.exists("./data/term_similarity_matrix.RData")){
 Ca11_1h.combinedGSEA <- rbind(Ca11_1h.GO$sig_df, # GO terms
                               Ca11_1h.KEGG$sig_df, # KEGG pathways
                               Ca11_1h.Hallmark$sig_df) %>% # Hallmark gene sets
+  dplyr::arrange(p.adjust) %>%
   dplyr::rowwise(.) %>% 
   # Calculate background ratio
   dplyr::mutate(
@@ -584,7 +584,8 @@ Ca11_1h.combinedGSEA <- rbind(Ca11_1h.GO$sig_df, # GO terms
   ) %>% 
   dplyr::ungroup() %>% 
   dplyr::relocate(c("ID", "Name", "setSize", "geneRatio", "NES", "p.adjust", "core_enrichment"),
-                  .before = everything())
+                  .before = everything()) %>% 
+  dplyr::slice_head(., n = 200)
 # Cluster enriched terms on gene set similarity
 Ca11_1h.cluster <- get_cluster(Ca11_1h.combinedGSEA, similarity.matrix, .threshold = 0.25)
 # Select cluster representative terms based on the involved genes' importance
@@ -597,10 +598,10 @@ write.xlsx(Ca11_1h.cluster$df,
            file.path(results_dir, folder, date, tables_dir, "Ca11_1h_total_GSEA_clusters.xlsx"))
 
 ### CA11 - 6h
-Ca11_6h.combinedGSEA <- rbind(filter(Ca11_6h.GO$sig_df, p.adjust < 0.001), # GO terms
-                              filter(Ca11_6h.KEGG$sig_df, p.adjust < 0.001),# KEGG pathways
-                              filter(Ca11_6h.Hallmark$sig_df, p.adjust < 0.001)) %>% # Hallmark gene sets
-  # Hallmark gene sets
+Ca11_6h.combinedGSEA <- rbind(Ca11_6h.GO$sig_df, # GO terms
+                              Ca11_6h.KEGG$sig_df,# KEGG pathways
+                              Ca11_6h.Hallmark$sig_df) %>% # Hallmark gene sets
+  dplyr::arrange(p.adjust) %>% 
   dplyr::rowwise(.) %>% 
   # Calculate background ratio
   dplyr::mutate(
@@ -608,7 +609,8 @@ Ca11_6h.combinedGSEA <- rbind(filter(Ca11_6h.GO$sig_df, p.adjust < 0.001), # GO 
   ) %>% 
   dplyr::ungroup() %>% 
   dplyr::relocate(c("ID", "Name", "setSize", "geneRatio", "NES", "p.adjust", "core_enrichment"),
-                  .before = everything())
+                  .before = everything()) %>% 
+  dplyr::slice_head(., n = 200)
 
 # Cluster enriched terms on gene set similarity
 Ca11_6h.cluster <- get_cluster(Ca11_6h.combinedGSEA, similarity.matrix, .threshold = 0.25)
@@ -619,12 +621,13 @@ V(Ca11_6h.cluster$graph)$Representative <- Ca11_6h.cluster$df$Representative
 V(Ca11_6h.cluster$graph)$Description <- Ca11_6h.cluster$df$Name
 # Save results
 write.xlsx(Ca11_6h.cluster$df, 
-           file.path(results_dir, folder, date, tables_dir, "Ca11_6h_total_GSEA_clusters.xlsx"))
+           file.path(results_dir, folder, date, tables_dir, "Ca11_6h_top200_GSEA_clusters.xlsx"))
 
 ### CP11 - 6h
 Cp11_6h.combinedGSEA <- rbind(Cp11_6h.GO$sig_df, # GO terms
                               Cp11_6h.KEGG$sig_df, # KEGG pathways
                               Cp11_6h.Hallmark$sig_df) %>% # Hallmark gene sets
+  dplyr::arrange(p.adjust) %>%
   dplyr::rowwise(.) %>% 
   # Calculate background ratio
   dplyr::mutate(
@@ -632,7 +635,8 @@ Cp11_6h.combinedGSEA <- rbind(Cp11_6h.GO$sig_df, # GO terms
   ) %>% 
   dplyr::ungroup() %>% 
   dplyr::relocate(c("ID", "Name", "setSize", "geneRatio", "NES", "p.adjust", "core_enrichment"),
-                  .before = everything())
+                  .before = everything()) %>% 
+  dplyr::slice_head(., n = 200)
 
 # Cluster enriched terms on gene set similarity
 Cp11_6h.cluster <- get_cluster(Cp11_6h.combinedGSEA, similarity.matrix, .threshold = 0.25)
@@ -649,6 +653,7 @@ write.xlsx(Cp11_6h.cluster$df,
 Cp51_6h.combinedGSEA <- rbind(Cp51_6h.GO$sig_df, # GO terms
                               Cp51_6h.KEGG$sig_df, # KEGG pathways
                               Cp51_6h.Hallmark$sig_df) %>% # Hallmark gene sets
+  dplyr::arrange(p.adjust) %>%
   dplyr::rowwise(.) %>% 
   # Calculate background ratio
   dplyr::mutate(
@@ -656,7 +661,8 @@ Cp51_6h.combinedGSEA <- rbind(Cp51_6h.GO$sig_df, # GO terms
   ) %>% 
   dplyr::ungroup() %>% 
   dplyr::relocate(c("ID", "Name", "setSize", "geneRatio", "NES", "p.adjust", "core_enrichment"),
-                  .before = everything())
+                  .before = everything()) %>% 
+  dplyr::slice_head(., n = 200)
 
 # Cluster enriched terms on gene set similarity
 Cp51_6h.cluster <- get_cluster(Cp51_6h.combinedGSEA, similarity.matrix, .threshold = 0.25)
@@ -667,7 +673,7 @@ V(Cp51_6h.cluster$graph)$Representative <- Cp51_6h.cluster$df$Representative
 V(Cp51_6h.cluster$graph)$Description <- Cp51_6h.cluster$df$Name
 # Save results
 write.xlsx(Cp51_6h.cluster$df, 
-           file.path(results_dir, folder, date, tables_dir, "Cp51_6h_total_GSEA_clusters.xlsx"))
+           file.path(results_dir, folder, date, tables_dir, "Cp51_6h_top200_GSEA_clusters.xlsx"))
 
 # Network visualization of the enriched clusters 
 # CA11 - 1h
@@ -695,7 +701,7 @@ Ca11_6h.cluster$layout <- layout_with_fr(Ca11_6h.cluster$sub_graph)
                                       .df = Ca11_6h.cluster$df))
 
 # Save plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Ca11_6h_GSEA_network.png"),
+ggsave(file.path(results_dir, folder, date, plots_dir, "Ca11_6h_top200_GSEA_network.png"),
        plot = Ca11_6h.cluster$plot, bg = "white",
        width = 20, height = 14, units = "in")
 
@@ -725,7 +731,7 @@ Cp51_6h.cluster$layout <- layout_with_fr(Cp51_6h.cluster$sub_graph)
                                       .df = Cp51_6h.cluster$df))
 
 # Save plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Cp51_6h_GSEA_network.png"),
+ggsave(file.path(results_dir, folder, date, plots_dir, "Cp51_6h_top200_GSEA_network.png"),
        plot = Cp51_6h.cluster$plot, bg = "white",
        width = 20, height = 14, units = "in")
 
