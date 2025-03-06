@@ -358,7 +358,7 @@ make_pca <- function(vst, key, group){
   return(plot)
 }
 
-make_heatmap <- function(dds, key, contrast = "Intercept"){
+make_heatmap <- function(dds, filter, key, contrast = "Intercept"){
   cols <- colorRampPalette(rev(brewer.pal(9, "RdYlBu")))(255)
   #get annotations
   anno <- data.frame(colData(dds)[key])
@@ -370,7 +370,7 @@ make_heatmap <- function(dds, key, contrast = "Intercept"){
   res <- res[match(names(ids), row.names(res)),]
   #prepare matrix
   mat <- assay(rlog(dds))[match(names(ids), row.names(assay(dds))),]
-  mat <- mat[head(order(res$stat, decreasing = T),20),]
+  mat <- mat[which(row.names(mat) %in% filter),c(1:6,10:12)] #head(order(res$stat, decreasing = T),20),]
   mat <- mat - rowMeans(mat)
   
   return(pheatmap(mat = mat,
@@ -1098,7 +1098,7 @@ make_circPlot <- function(df){
        midpoint = 0,
        aesthetics = c("fill","color")
      ) + 
-     facet_grid(.~condition, 
+     facet_wrap(~condition, ncol = 1,
                 labeller = as_labeller(
                   c("CA11" = "C.albicans (MOI 1:1)",
                     "CP51" = "C.parapsilosis (MOI 5:1)")
@@ -1115,10 +1115,12 @@ make_circPlot <- function(df){
        panel.background = element_rect(fill = "white",
                                        color = "white"),
        #strip parameters
-       strip.clip = "off", 
-       strip.text = element_text(color = "gray12", size = 14),
+       strip.clip = "off",
+       strip.text.x.top = element_text(color = "gray12", size = 14),
        # Move the legend to the bottom
-       legend.position = "bottom",
+       legend.position = "left",
+       legend.title.position = "left",
+       legend.title = element_text(size = 14, angle = 90, hjust = 0.5),
      ) + 
      coord_polar())
 }
@@ -1188,7 +1190,7 @@ plot_miRNA_targets <- function(miRNA_data) {
              stat = "identity", position = position_dodge(width = 0.7), 
              width = 0.6, color = "black") +
     scale_fill_manual(values = c("miRNA" = "purple", "mRNA" = "steelblue")) +
-    facet_wrap(~miRname,scales = "free_x") +
+    facet_wrap(~miRname, nrow = 1, scales = "free_x") +
     labs(title = "",
          x = "", y = expression(paste(log[2], 'FoldChange'))) +
     geom_hline(yintercept = c(0), 

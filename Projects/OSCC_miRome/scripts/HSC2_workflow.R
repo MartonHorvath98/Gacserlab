@@ -249,8 +249,12 @@ ggsave(file.path(results_dir, folder, date, plots_dir, "1h_heatmap.png"),
        plot = heatmap.1h, width = 8, height = 10, units = 'in')
 
 ## 2.2 6 hours infection model
-(heatmap.6h <- make_heatmap(DESeq.6h$dds, "condition", "condition_CA11_vs_ctrl"))
-ggsave(file.path(results_dir, folder, date, plots_dir, "6h_heatmap.png"), 
+# genes <- rbind(Ca11_6h.res$sig_df, Cp51_6h.res$sig_df) %>% 
+#   dplyr::arrange(desc(abs(stat))) %>%
+#   dplyr::slice_head(n = 20) %>% 
+#   row.names(.)
+(heatmap.6h <- make_heatmap(DESeq.6h$dds, genes, "condition", "condition_CA11_vs_ctrl"))
+ggsave(file.path(results_dir, folder, date, plots_dir, "noCp11_6h_heatmap.png"), 
        plot = heatmap.6h, width = 8, height = 10, units = 'in')
 
 ##############################################
@@ -872,7 +876,7 @@ pancancer.circ <- lapply(names(pancancer.spider), function(x){
 pancancer.circ <- do.call(rbind.fill, pancancer.circ)
 
 (pancancer.circ_plot <- make_circPlot(pancancer.circ))
-ggsave(file.path(results_dir, folder, date, plots_dir, "pancancer_circplot.png"), 
+ggsave(file.path(results_dir, folder, date, plots_dir, "vertical_pancancer_circplot.png"), 
        plot = pancancer.circ_plot, width = 17, height = 10, units = 'in')
 
 
