@@ -358,19 +358,19 @@ make_pca <- function(vst, key, group){
   return(plot)
 }
 
-make_heatmap <- function(dds, filter, key, contrast = "Intercept"){
+make_heatmap <- function(dds, key, contrast = "Intercept"){
   cols <- colorRampPalette(rev(brewer.pal(9, "RdYlBu")))(255)
   #get annotations
   anno <- data.frame(colData(dds)[key])
   ids <-  na.omit(mapIds(org.Hs.eg.db, row.names(dds),
-                 keytype = "ENSEMBL",column = "SYMBOL",
-                 multiVals = "first"))
+                         keytype = "ENSEMBL",column = "SYMBOL",
+                         multiVals = "first"))
   
   res <- results(dds, name = contrast)
   res <- res[match(names(ids), row.names(res)),]
   #prepare matrix
   mat <- assay(rlog(dds))[match(names(ids), row.names(assay(dds))),]
-  mat <- mat[which(row.names(mat) %in% filter),c(1:6,10:12)] #head(order(res$stat, decreasing = T),20),]
+  mat <- mat[head(order(res$stat, decreasing = T),20),]
   mat <- mat - rowMeans(mat)
   
   return(pheatmap(mat = mat,
@@ -599,9 +599,13 @@ cohen_kappa <- function(.list){
 
 # A function to create a network graph of gene sets based on the Cohen's Kappa coefficient
 # then cluster the network based on interconnectivity using Louvain algorithm
-get_cluster <- function(.df, .matrix, .column, .threshold = 0.25){
+get_cluster <- function(.df, .matrix, type = c("ORA","GSEA"), .column, .threshold = 0.25){
   # extract the list of enriched gene sets 
-  genes <- split(strsplit(.df[["core_enrichment"]],"/"), .df[["ID"]])
+  if (type == "GSEA") {
+    genes <- split(strsplit(.df[["core_enrichment"]],"/"), .df[["ID"]])
+  } else {
+    genes <- split(strsplit(.df[["geneID"]],"/"), .df[["ID"]])
+  }
   
   # subset the cohen's matrix for the gene sets of interest
   similarity.matrix <- .matrix[.df[['ID']], .df[['ID']]]
@@ -614,9 +618,15 @@ get_cluster <- function(.df, .matrix, .column, .threshold = 0.25){
   graph <- graph_from_adjacency_matrix(adjacency.matrix, mode = "undirected", diag = F)
   
   # annotate the nodes of the graph with the enrichment results
-  V(graph)$Name <- .df$Name
-  V(graph)$NES <- .df$NES
-  V(graph)$geneRatio <- .df$geneRatio
+  if (type == "GSEA") {
+    V(graph)$Name <- .df$Name
+    V(graph)$NES <- .df$NES
+    V(graph)$geneRatio <- .df$geneRatio
+  } else {
+    V(graph)$Name <- .df$Name
+    V(graph)$NES <- .df$zScore
+    V(graph)$geneRatio <- .df$GeneRatio
+  }
   
   # Community detection (Louvain algorithm)
   clusters <- cluster_louvain(graph)
@@ -636,55 +646,87 @@ get_cluster <- function(.df, .matrix, .column, .threshold = 0.25){
   return(list(graph = graph, df = df))
 }
 
-get_cluster_representative <- function(.cluster, .degs){
+get_cluster_representative <- function(.cluster, .degs, type = c("ORA","GSEA")){
   # add gene expression values to the clusters
-  linkage <- .cluster %>% 
-    dplyr::select(ID, Name, core_enrichment, cluster) %>%
-    tidyr::separate_rows(core_enrichment, sep = "/")
-  
-  linkage$logFC = .degs$log2FoldChange[match(linkage$core_enrichment, .degs$geneID)]
-  linkage$padj = .degs$padj[match(linkage$core_enrichment, .degs$geneID)]
+  if (type == "ORA") {
+    linkage <- .cluster %>% 
+      dplyr::select(ID, Name, geneID, cluster) %>%
+      tidyr::separate_rows(geneID, sep = "/")
+    
+    linkage$logFC = .degs$log2FoldChange[match(linkage$geneID, .degs$genesymbol)]
+    linkage$padj = .degs$padj[match(linkage$geneID, .degs$genesymbol)]
+  } else {
+    linkage <- .cluster %>% 
+      dplyr::select(ID, Name, core_enrichment, cluster) %>%
+      tidyr::separate_rows(core_enrichment, sep = "/")
+    
+    linkage$logFC = .degs$log2FoldChange[match(linkage$core_enrichment, .degs$geneID)]
+    linkage$padj = .degs$padj[match(linkage$core_enrichment, .degs$geneID)]
+  }
   
   # calculate normalized term weight
   linkage$weight = abs(linkage$logFC)*(-log10(linkage$padj))
   linkage$weight = linkage$weight/max(linkage$weight, na.rm = T)
   
-  linkage = linkage %>% 
-    dplyr::select(c("core_enrichment", "ID", "weight", "cluster")) %>%
-    setNames(.,c("node1", "node2", "weight", "cluster")) %>% 
-    as.data.frame(.)
-  
+  if (type == "ORA") {
+    linkage = linkage %>%
+      dplyr::select(c("geneID", "ID", "weight", "cluster")) %>%
+      setNames(.,c("node1", "node2", "weight", "cluster")) %>%
+      as.data.frame(.)
+  } else {
+    linkage = linkage %>%
+      dplyr::select(c("core_enrichment", "ID", "weight", "cluster")) %>%
+      setNames(.,c("node1", "node2", "weight", "cluster")) %>%
+      as.data.frame(.)
+  }
+
   # create a network visualization of gene and GO-term relationships
   net <- graph_from_data_frame(linkage)
   net <- igraph::simplify(net, remove.multiple = F, remove.loops = T)
-  
+
   # calculate hub score of each gene
   hs <-  igraph::hub_score(net, scale = T, weights = linkage$weight)$vector
   
   # summarize gene hub scores, to determine the final weight of each GO term
-  linkage$geneRatio = .cluster$geneRatio[match(linkage$node2, .cluster$ID)]
-  
-  linkage <- linkage %>%
-    dplyr::mutate(hub_score = geneRatio * hs[match(node1, names(hs))]) %>% 
-    dplyr::rename(geneID = node1, ID = node2) %>% 
-    dplyr::group_by(ID, cluster) %>%
-    dplyr::summarise(core_enrichment = paste(geneID, collapse = "/"),
-                     hub_score = sum(hub_score, na.rm = T))
-  
-  out_df <- inner_join(.cluster, linkage, by = c("ID","core_enrichment","cluster")) %>%
-    dplyr::mutate(cluster = as.factor(cluster))
-  
+  if (type == "ORA") {
+    linkage$geneRatio = .cluster$GeneRatio[match(linkage$node2, .cluster$ID)]
+  } else {
+    linkage$geneRatio = .cluster$geneRatio[match(linkage$node2, .cluster$ID)]
+  }
+
+  if (type == "ORA") {
+    linkage <- linkage %>%
+      dplyr::mutate(hub_score = geneRatio * hs[match(node1, names(hs))]) %>%
+      dplyr::rename(geneID = node1, ID = node2) %>%
+      dplyr::group_by(ID, cluster) %>%
+      dplyr::summarise(geneID = paste(geneID, collapse = "/"),
+                       hub_score = sum(hub_score, na.rm = T))
+    
+    out_df <- inner_join(.cluster, linkage, by = c("ID","geneID","cluster")) %>%
+      dplyr::mutate(cluster = as.factor(cluster))
+  } else {
+    linkage <- linkage %>%
+      dplyr::mutate(hub_score = geneRatio * hs[match(node1, names(hs))]) %>%
+      dplyr::rename(geneID = node1, ID = node2) %>%
+      dplyr::group_by(ID, cluster) %>%
+      dplyr::summarise(core_enrichment = paste(geneID, collapse = "/"),
+                       hub_score = sum(hub_score, na.rm = T))
+    
+    out_df <- inner_join(.cluster, linkage, by = c("ID","core_enrichment","cluster")) %>%
+      dplyr::mutate(cluster = as.factor(cluster))
+  }
+
   # select cluster representatives according to calculated weight
   representative.terms <- out_df %>%
     dplyr::group_by(cluster) %>%
     dplyr::arrange(desc(hub_score)) %>%
     dplyr::slice_head(n = 1) %>%
     dplyr::pull(ID)
-  
+
   out_df <- out_df %>%
     dplyr::rowwise(.) %>%
     dplyr::mutate(Representative = ifelse(ID %in% representative.terms, T, F))
-  
+
   return(out_df)
 }
 
@@ -700,31 +742,43 @@ filter_graph <- function(.graph, .threshold){
   return(subgraph)
 }
 
-plot_network <- function(.net, .layout, .labels, .df){
+plot_network <- function(.net, .layout, .labels, .df, type = c("ORA","GSEA")){
   edges = as.data.frame(as_edgelist(.net)) %>% 
     setNames(c("from", "to"))
   
-  df = data.frame(x = as.data.frame(.layout)[,1],
-                  y = as.data.frame(.layout)[,2],
-                  ID = names(V(.net)),
-                  Name = V(.net)$Description,
-                  cluster = as.factor(V(.net)$cluster),
-                  Representative = V(.net)$Representative,
-                  weight = abs(.df[["hub_score"]][match(names(V(.net)), .df[["ID"]])]),
-                  regulation = ifelse(.df[["NES"]][match(names(V(.net)), .df[["ID"]])] > 0, "UP", "DOWN")
-  )
-  
-  lines = edges %>% 
+  if (type == "ORA") {
+    df = data.frame(x = as.data.frame(.layout)[,1],
+                    y = as.data.frame(.layout)[,2],
+                    ID = names(V(.net)),
+                    Name = V(.net)$Description,
+                    cluster = as.factor(V(.net)$cluster),
+                    Representative = V(.net)$Representative,
+                    weight = abs(.df[["hub_score"]][match(names(V(.net)), .df[["ID"]])]),
+                    regulation = ifelse(.df[["zScore"]][match(names(V(.net)), .df[["ID"]])] > 0, "UP", "DOWN")
+    )
+  } else {
+    df = data.frame(x = as.data.frame(.layout)[,1],
+                    y = as.data.frame(.layout)[,2],
+                    ID = names(V(.net)),
+                    Name = V(.net)$Description,
+                    cluster = as.factor(V(.net)$cluster),
+                    Representative = V(.net)$Representative,
+                    weight = abs(.df[["hub_score"]][match(names(V(.net)), .df[["ID"]])]),
+                    regulation = ifelse(.df[["NES"]][match(names(V(.net)), .df[["ID"]])] > 0, "UP", "DOWN")
+    )
+  }
+
+  lines = edges %>%
     dplyr::mutate(
       from.x = df$x[match(edges$from, df$ID)],
       from.y = df$y[match(edges$from, df$ID)],
       to.x = df$x[match(edges$to, df$ID)],
       to.y = df$y[match(edges$to, df$ID)]
     )
-  
+
   plot = ggplot() +
-    stat_ellipse(data = df, geom = "polygon", 
-                 aes(x = x, y = y, group = cluster), fill = "grey75", color = "grey15", #color = cluster, fill = cluster), 
+    stat_ellipse(data = df, geom = "polygon",
+                 aes(x = x, y = y, group = cluster), fill = "grey75", color = "grey15", #color = cluster, fill = cluster),
                  type = "norm", level = 0.9,
                  alpha = .1, linetype = 2, show.legend = F) +
     geom_segment(data = lines, aes(x = from.x, y = from.y, xend = to.x, yend = to.y),
@@ -733,7 +787,7 @@ plot_network <- function(.net, .layout, .labels, .df){
                shape = 21, colour = "black") +
     # geom_point(data = subset(df, Representative), aes(x = x, y = y), #fill = cluster, size = 5),
     #            shape = 21, colour = "orange", fill = "transparent", stroke = 2, size = 15) +
-    geom_label_repel(data = subset(df, Name %in% .labels), 
+    geom_label_repel(data = subset(df, Name %in% .labels),
                      aes(x = x, y = y,
                          label = ifelse(Representative, str_wrap(gsub("_"," ",Name), 30), "")),
                      max.overlaps = 100, min.segment.length = 0, size = 6,
@@ -747,28 +801,28 @@ plot_network <- function(.net, .layout, .labels, .df){
                       guide = guide_legend(override.aes = c(size = 10))) +
     scale_size_continuous(guide = "none", range=c(5,15)) +
     theme_void() +
-    theme(legend.title=element_text(size=28), 
+    theme(legend.title=element_text(size=28),
           legend.text=element_text(size=28),
           legend.spacing=unit(1.5,"lines"),
           legend.position = "right")
-  
+
   return(plot)
 }
 
 getCircplotData <- function(.cluster, .deg, .interest_cluster, .interest_cluster_genes, .palette){
   linkage <- .cluster %>% 
     dplyr::filter(ID %in% names(.interest_cluster)) %>% 
-    dplyr::select(ID, Name, core_enrichment, cluster) %>%
-    tidyr::separate_rows(core_enrichment, sep = "/") %>% 
+    dplyr::select(ID, Name, geneID, cluster) %>%
+    tidyr::separate_rows(geneID, sep = "/") %>% 
     dplyr::left_join(.deg[,c("geneID","log2FoldChange","pvalue")],
-                     by = c("core_enrichment" = "geneID")) %>% 
+                     by = c("geneID")) %>% 
     dplyr::rowwise() %>%
     # ...as a function of the log2FoldChange and adjusted p-value
     dplyr::mutate(weight = abs(log2FoldChange)*(-log10(pvalue))) %>% 
     dplyr::ungroup() %>% 
     dplyr::filter(complete.cases(.)) %>% 
     dplyr::mutate(weight = as.numeric(weight/max(weight))) %>%
-    dplyr::select(c("core_enrichment", "Name", "weight", "cluster")) %>%
+    dplyr::select(c("geneID", "Name", "weight", "cluster")) %>%
     setNames(.,c("node1", "node2", "weight", "cluster")) %>%
     as.data.frame(.)
   
@@ -777,33 +831,33 @@ getCircplotData <- function(.cluster, .deg, .interest_cluster, .interest_cluster
   net <- igraph::simplify(net, remove.multiple = F, remove.loops = T)
   # calculate hub score of each gene
   hs <-  igraph::hub_score(net, scale = T, weights = linkage$weight)$vector
-  
+
   # summarize gene hub scores, to determine the final weight of each GO term
   linkage <- linkage %>%
     dplyr::rowwise(.) %>%
     dplyr::mutate(hub_score = hs[which(names(hs) == node1)])
-  
-  linkage_wide <- linkage %>% 
+
+  linkage_wide <- linkage %>%
     dplyr::select(node1, node2, hub_score) %>%
     tidyr::pivot_wider(names_from = node2, values_from = hub_score) %>%
-    dplyr::mutate(across(where(is.numeric), ~ifelse(is.na(.), 0, .))) %>% 
-    tibble::column_to_rownames("node1") %>% 
+    dplyr::mutate(across(where(is.numeric), ~ifelse(is.na(.), 0, .))) %>%
+    tibble::column_to_rownames("node1") %>%
     as.matrix()
-  
+
   background = unique(linkage$node1[-c(which(linkage$node1 %in% .interest_cluster_genes))])
-  focus = .interest_cluster_genes                   
+  focus = .interest_cluster_genes
   grid.col = c(.palette,
                setNames(rep("grey", length(background)), background),
                setNames(rep("red", length(focus)), focus))
-  
+
   # Extract sector names
   from_sectors <- rownames(linkage_wide)
   to_sectors <- colnames(linkage_wide)
-  
+
   border_mat = matrix(NA, nrow = nrow(linkage_wide), ncol = ncol(linkage_wide))
   border_mat[row.names(linkage_wide) %in% .interest_cluster_genes, ] = "red"
   dimnames(border_mat) = dimnames(linkage_wide)
-  
+
   return(list(data.mat = linkage_wide, border.mat = border_mat, grid.col = grid.col))
 }
 
@@ -825,7 +879,7 @@ plotCircplot <- function(.path, .data, .color, .links, .labels){
     # Label all 'to' sectors and only selected 'from' sectors
     if (sector_name %in% .labels) {
       circos.text(CELL_META$xcenter, CELL_META$ylim[1],
-                  str_wrap(gsub("_", " ", CELL_META$sector.index), 25), 
+                  str_wrap(gsub("_", " ", gsub("GOBP", "", CELL_META$sector.index)), 25), 
                   facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
     }
   }, bg.border = NA)
@@ -1089,7 +1143,7 @@ make_circPlot <- function(df){
        data = subset.data.frame(df, geneRation > 0),
        aes(label = str_wrap(paste(paste0("zsc:",round(zscore,2)),
                                   paste0("(",geneRation,"%)")), 10),
-           y = max(geneRation)-5), direction = "y",
+           y = max(geneRation)-5), direction = "both",
        fill="white",label.padding = unit(5, "pt"),
        position=position_dodge(width=0.9), vjust=-0.25) +
      scale_fill_gradient2(

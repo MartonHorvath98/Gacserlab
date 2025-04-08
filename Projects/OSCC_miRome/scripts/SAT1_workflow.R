@@ -5,20 +5,11 @@
 #data folder
 # Set downstream path
 pw <- getwd()
-folder <- "mRNA"
-# Create the dated results folder
-data_dir <- "data"
-if (!dir.exists(file.path(data_dir, folder))) {
-  dir.create(file.path(data_dir, folder)) # create the main results folder
-}
+folder <- "SAT_Krisztian"
 results_dir <- "results"
 if (!dir.exists(file.path(results_dir, folder))) {
   dir.create(file.path(results_dir, folder)) # create the main results folder
 }
-# Copy readcounts from their source folder to the data folder
-mrna.path <- choose.dir(getwd(), "Select the directory containing the count files")
-mrna.files <- list.files(mrna.path, pattern = "counts.txt$", full.names = T)
-file.copy(from = mrna.files, to = file.path(data_dir, folder))
 
 # get the current date
 date <- format(Sys.Date(), "%Y-%m-%d")
@@ -26,12 +17,16 @@ date <- format(Sys.Date(), "%Y-%m-%d")
 plots_dir <- "plots"
 #tables directory
 tables_dir <- "tables"
-if (!dir.exists(file.path(results_dir, folder, date))) {
-  dir.create(file.path(results_dir, folder, date), recursive = T) # create the dated results folder
-  dir.create(file.path(results_dir, folder, date, tables_dir)) # create the tables folder
-  dir.create(file.path(results_dir, folder, date, plots_dir)) # create the plots folder
+if (!dir.exists(file.path(results_dir, folder, paste("mRNA", date, sep = "_")))) {
+  dir.create(file.path(results_dir, folder, paste("mRNA", date, sep = "_")), recursive = T) # create the dated results folder
+  dir.create(file.path(results_dir, folder, paste("mRNA", date, sep = "_"), tables_dir)) # create the tables folder
+  dir.create(file.path(results_dir, folder, paste("mRNA", date, sep = "_"), plots_dir)) # create the plots folder
 }
-
+if (!dir.exists(file.path(results_dir, folder, paste("miRNA", date, sep = "_")))) {
+  dir.create(file.path(results_dir, folder, paste("miRNA", date, sep = "_")), recursive = T) # create the dated results folder
+  dir.create(file.path(results_dir, folder, paste("miRNA", date, sep = "_"), tables_dir)) # create the tables folder
+  dir.create(file.path(results_dir, folder, paste("miRNA", date, sep = "_"), plots_dir)) # create the plots folder
+}
 #######################################
 # 2.) Load functions for the analyses #
 #######################################
@@ -74,43 +69,43 @@ rm(list = ls()[grepl("mrna.", ls())])
 ##########################
 # 4.) Ready count tables #
 ##########################
-HSC2.readcounts <- read.csv(file = file.path(pw, data_dir,folder,"readcounts.csv"),
-                       sep = ",", header = T, na.strings = NA, row.names = 1) %>% 
-  setNames(gsub(".counts.txt", "", colnames(.)))
-HSC2.readcounts <- as.matrix(HSC2.readcounts) 
-
-# split the readcounts into 1h and 6h
-HSC2.readcounts <- list("1h" = HSC2.readcounts[,1:6], 
-                        "6h" = HSC2.readcounts[,7:18])
+SAT1.readcounts <- read.csv(file = file.path(results_dir, folder, 
+                                             "SAT_mRNA_readcounts_all_samples.csv"),
+                            sep = ",", header = T, na.strings = NA, row.names = 1) 
+SAT1.readcounts <- as.matrix(SAT1.readcounts) 
 
 ##############################
 # 5.) Prepare metadata table #
 ##############################
 
 # Create the metadata table
-HSC2.coldata <- data.frame("samples" = gsub(".counts.txt", "", file.names)) %>%
+SAT1.coldata <- data.frame("samples" = colnames(SAT1.readcounts)) %>%
   dplyr::mutate(time = dplyr::case_when(
-    stringr::str_detect(file.names, "H1") ~ "1h",
-    stringr::str_detect(file.names, "H6") ~ "6h"),
+    stringr::str_detect(colnames(SAT1.readcounts), "H1") ~ "1h",
+    stringr::str_detect(colnames(SAT1.readcounts), "H6") ~ "6h"),
     time = factor(time, 
                   levels = c("1h","6h"))) %>% 
   dplyr::group_split(time, .keep = F)
 
-HSC2.coldata <- lapply(HSC2.coldata, function(x){
+# split the readcounts into 1h and 6h
+SAT1.readcounts <- list("1h" = SAT1.readcounts[,1:6], 
+                        "6h" = SAT1.readcounts[,7:18])
+
+SAT1.coldata <- lapply(SAT1.coldata, function(x){
   x %>%
     dplyr::mutate(
       samples = as.factor(samples),
       # extract the treatment from the sample name
       treatment = dplyr::case_when(
-        stringr::str_detect(samples, "_CA") ~ "CA",
-        stringr::str_detect(samples, "_CP") ~ "CP",
+        stringr::str_detect(samples, "CA") ~ "CA",
+        stringr::str_detect(samples, "CP") ~ "CP",
         T ~ "ctrl"),
       treatment = relevel(as.factor(treatment), ref = "ctrl"),
       # extract the moiety from the sample name
       moi = dplyr::case_when(
-        stringr::str_detect(samples, "_CA11") ~ "11",
-        stringr::str_detect(samples, "_CP11") ~ "11",
-        stringr::str_detect(samples, "_CP51") ~ "51",
+        stringr::str_detect(samples, "CA11") ~ "11",
+        stringr::str_detect(samples, "CP11") ~ "11",
+        stringr::str_detect(samples, "CP51") ~ "51",
         T ~ ""),
       moi = relevel(as.factor(moi), ref = ""),
       # create the condition column gluing the treatment and moi
@@ -122,29 +117,31 @@ HSC2.coldata <- lapply(HSC2.coldata, function(x){
       condition = relevel(condition, ref = "ctrl"))
 })
 
-names(HSC2.coldata) <- c("1h","6h")
+names(SAT1.coldata) <- c("1h","6h")
 
 ##############################################
 # 6.) Make differential analyses with DESeq2 #
 ##############################################
 
 # Run DESeq2 on the 1 hour infection model data
-DESeq.1h <- calc_DiffExp(matrix = HSC2.readcounts[["1h"]], 
-                         coldata = HSC2.coldata[["1h"]],
+DESeq.1h <- calc_DiffExp(matrix = SAT1.readcounts[["1h"]], 
+                         coldata = SAT1.coldata[["1h"]],
                          design = "condition")
 # Run DESeq2 on the 6 hours infection model data
-DESeq.6h <- calc_DiffExp(matrix = HSC2.readcounts[["6h"]],
-                         coldata = HSC2.coldata[["6h"]],
+DESeq.6h <- calc_DiffExp(matrix = SAT1.readcounts[["6h"]],
+                         coldata = SAT1.coldata[["6h"]],
                          design = "condition")
 
 # PCA analysis of the 1 hour infection model data 
-(pca.1h <- make_pca(DESeq.1h$dds_norm, "samples", HSC2.coldata[["1h"]]$condition))
-ggsave(file.path(results_dir, folder, date, plots_dir, "1h_pca.png"), plot = pca.1h,
+(pca.1h <- make_pca(DESeq.1h$dds_norm, "samples", SAT1.coldata[["1h"]]$condition))
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "1h_pca.png"), plot = pca.1h,
        width = 8, height = 8, units = 'in')
 
 # PCA analysis of the 6 hours infection model data
-(pca.6h <- make_pca(DESeq.6h$dds_norm, "samples", HSC2.coldata[["6h"]]$condition))
-ggsave(file.path(results_dir, folder, date, plots_dir, "6h_pca.png"), plot = pca.6h,
+(pca.6h <- make_pca(DESeq.6h$dds_norm, "samples", SAT1.coldata[["6h"]]$condition))
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "6h_pca.png"), plot = pca.6h,
        width = 8, height = 8, units = 'in')
 
 # Extract significant results for the 1 hour infection model
@@ -154,7 +151,7 @@ Ca11_1h.res <- get_results(DESeq.1h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Ca11_1h.res$sig_df$significance) # 0 down-regulated, 4 up-regulated
+table(Ca11_1h.res$sig_df$significance) # 1 down-regulated, 0 up-regulated
 
 # Save results to excel files
 sapply(names(Ca11_1h.res), function(x){
@@ -171,12 +168,12 @@ Ca11_6h.res <- get_results(DESeq.6h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Ca11_6h.res$sig_df$significance) # 13 down-regulated, 157 up-regulated
+table(Ca11_6h.res$sig_df$significance) # 91 down-regulated, 35 up-regulated
 
 # Save results to excel files
 sapply(names(Ca11_6h.res), function(x){
   openxlsx::write.xlsx(Ca11_6h.res[[x]], 
-                       file.path(results_dir, folder, date, tables_dir, 
+                       file.path(results_dir, folder,  paste("mRNA", date, sep = "_"), tables_dir, 
                                  paste0("Ca11_6h_",x,".xlsx")),
                        rowNames = T)
 })
@@ -187,12 +184,12 @@ Cp11_6h.res <- get_results(DESeq.6h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Cp11_6h.res$sig_df$significance) # 0 down-regulated, 0 up-regulated
+table(Cp11_6h.res$sig_df$significance) # 87 down-regulated, 27 up-regulated
 
 # Save results to excel files
 sapply(names(Cp11_6h.res), function(x){
   openxlsx::write.xlsx(Cp11_6h.res[[x]], 
-                       file.path(results_dir, folder, date, tables_dir, 
+                       file.path(results_dir, folder,  paste("mRNA", date, sep = "_"), tables_dir, 
                                  paste0("Cp11_6h_",x,".xlsx")),
                        rowNames = T)
 })
@@ -204,11 +201,11 @@ Cp51_6h.res <- get_results(DESeq.6h$dds,
                            lfc_treshold = 1.5,
                            pval_treshold = 0.05)
 # Check the number of DEGs:
-table(Cp51_6h.res$sig_df$significance) # 2 down-regulated, 46 up-regulated
+table(Cp51_6h.res$sig_df$significance) # 89 down-regulated, 40 up-regulated
 
 sapply(names(Cp51_6h.res), function(x){
   openxlsx::write.xlsx(Cp51_6h.res[[x]], 
-                       file.path(results_dir, folder, date, tables_dir, 
+                       file.path(results_dir, folder,  paste("mRNA", date, sep = "_"), tables_dir, 
                                  paste0("Cp51_6h_",x,".xlsx")),
                        rowNames = T)
 })
@@ -220,14 +217,16 @@ sapply(names(Cp51_6h.res), function(x){
 ## 1.1 1 hour infection model
 (Ca11_1h.res$plot <- make_vulcanplot(Ca11_1h.res$df, Ca11_1h.res$sig_df))
 # save the plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Ca11_1h_vulcan.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "Ca11_1h_vulcan.png"), 
        plot = Ca11_1h.res$plot, width = 10, height = 8, units = 'in')
 
 ## 1.2 6 hours infection model
 # CA11
 (Ca11_6h.res$plot <- make_vulcanplot(Ca11_6h.res$df, Ca11_6h.res$sig_df))
 # save the plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Ca11_6h_vulcan.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"), 
+                 plots_dir, "Ca11_6h_vulcan.png"), 
        plot = Ca11_6h.res$plot, width = 10, height = 8, units = 'in')
 
 # CP11
@@ -283,56 +282,60 @@ hallmark_sets <- msigdbr_df %>%
 ## 1 Get entrez IDs: gene set of interest and background
 Ca11_1h.entrez <- get_genelist(.df = Ca11_1h.res$df,
                                .filter = Ca11_1h.res$df[["significance"]] %in% c('Signif. up-regulated',
-                                                                                'Signif. down-regulated'),
+                                                                                 'Signif. down-regulated'),
                                .value = "stat",
                                .name = "entrezID") # CA11 1 hour
 Ca11_6h.entrez <- get_genelist(.df = Ca11_6h.res$df,
                                .filter = Ca11_6h.res$df[["significance"]] %in% c('Signif. up-regulated',
-                                                                                'Signif. down-regulated'),
+                                                                                 'Signif. down-regulated'),
                                .value = "stat",
                                .name = "entrezID") # CA11 6 hours
 Cp11_6h.entrez <- get_genelist(.df = Cp11_6h.res$df,
                                .filter = Cp11_6h.res$df[["significance"]] %in% c('Signif. up-regulated',
-                                                                                'Signif. down-regulated'),
+                                                                                 'Signif. down-regulated'),
                                .value = "stat",
                                .name = "entrezID") # CP11 6 hours
 Cp51_6h.entrez <- get_genelist(.df = Cp51_6h.res$df,
                                .filter = Cp51_6h.res$df[["significance"]] %in% c('Signif. up-regulated',
-                                                                                'Signif. down-regulated'),
+                                                                                 'Signif. down-regulated'),
                                .value = "stat",
                                .name = "entrezID") # CP51 6 hours
 
 ## 2 Run the ORA analysis
-Ca11_1h.ORA.KEGG <- list()
-Ca11_1h.ORA.KEGG <- run_ora(.interest = Ca11_1h.entrez$interest,
-                        .background = Ca11_1h.entrez$background,
-                        .pathways = kegg_pathways)
-Ca11_1h.ORA.KEGG <- c(Ca11_1h.ORA.KEGG,
-                      extract_ora_results(.ora = Ca11_1h.ORA.KEGG$ora,
-                                          .db = kegg_pathways))
+# No DEGs
+# Ca11_1h.ORA.KEGG <- list()
+# Ca11_1h.ORA.KEGG <- run_ora(.interest = Ca11_1h.entrez$interest,
+#                             .background = Ca11_1h.entrez$background,
+#                             .pathways = kegg_pathways)
+# Ca11_1h.ORA.KEGG <- c(Ca11_1h.ORA.KEGG,
+#                       extract_ora_results(.ora = Ca11_1h.ORA.KEGG$ora,
+#                                           .db = kegg_pathways))
 # Save the results
-openxlsx::write.xlsx(Ca11_1h.ORA.KEGG[c(2:3)], 
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_ORA_KEGG.xlsx"))
+# openxlsx::write.xlsx(Ca11_1h.ORA.KEGG[c(2:3)], 
+#                      file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+#                                tables_dir, "Ca11_1h_ORA_KEGG.xlsx"))
 
 Ca11_6h.ORA.KEGG <- list()
 Ca11_6h.ORA.KEGG <- run_ora(.interest = Ca11_6h.entrez$interest,
-                        .background = Ca11_6h.entrez$background,
-                        .pathways = kegg_pathways)
+                            .background = Ca11_6h.entrez$background,
+                            .pathways = kegg_pathways)
 Ca11_6h.ORA.KEGG <- c(Ca11_6h.ORA.KEGG, extract_ora_results(.ora = Ca11_6h.ORA.KEGG$ora, .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.ORA.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_ORA_KEGG.xlsx"))
+                     file.path(results_dir, folder, paste("mRNA", date, sep = "_"), 
+                               tables_dir, "Ca11_6h_ORA_KEGG.xlsx"))
 
-# No DEGs
-# Cp11_6h.ORA.KEGG <- list()
-# Cp11_6h.ORA.KEGG <- run_ora(.interest = Cp11_6h.entrez$interest,
-#                          .background = Cp11_6h.entrez$background,
-#                          .pathways = kegg_pathways)
-# Cp11_6h.ORA.KEGG <- c(Cp11_6h.ORA.KEGG, 
-#                       extract_ora_results(.ora = Cp11_6h.ORA.KEGG$ora, .db = kegg_pathways))
-# # Save the results
-# openxlsx::write.xlsx(Cp11_6h.ORA.KEGG[c(2:3)],
-#                      file.path(results_dir, folder, date, tables_dir, "Cp11_6h_ORA.KEGG.xlsx"))
+
+Cp11_6h.ORA.KEGG <- list()
+Cp11_6h.ORA.KEGG <- run_ora(.interest = Cp11_6h.entrez$interest,
+                         .background = Cp11_6h.entrez$background,
+                         .pathways = kegg_pathways)
+Cp11_6h.ORA.KEGG <- c(Cp11_6h.ORA.KEGG,
+                      extract_ora_results(.ora = Cp11_6h.ORA.KEGG$ora, .db = kegg_pathways))
+# Save the results
+openxlsx::write.xlsx(Cp11_6h.ORA.KEGG[c(2:3)],
+                     file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp11_6h_ORA.KEGG.xlsx"))
 
 Cp51_6h.ORA.KEGG <- list()
 Cp51_6h.ORA.KEGG <- run_ora(.interest = Cp51_6h.entrez$interest,
@@ -342,29 +345,32 @@ Cp51_6h.ORA.KEGG <- c(Cp51_6h.ORA.KEGG,
                       extract_ora_results(.ora = Cp51_6h.ORA.KEGG$ora, .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.ORA.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_ORA_KEGG.xlsx"))
+                     file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp51_6h_ORA_KEGG.xlsx"))
 
 ## 3 Graphical analysis
-(Ca11_1h.ORA.KEGG$plot <- make_dotplot(Ca11_1h.ORA.KEGG$sig_df, 
-                                       Ca11_1h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_ORA_KEGG.png"), 
-       plot = Ca11_1h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
+# (Ca11_1h.ORA.KEGG$plot <- make_dotplot(Ca11_1h.ORA.KEGG$sig_df, 
+#                                        Ca11_1h.ORA.KEGG$sig_df$Count, type = "KEGG"))
+# ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_ORA_KEGG.png"), 
+#        plot = Ca11_1h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
 
 (Ca11_6h.ORA.KEGG$plot <- make_dotplot(Ca11_6h.ORA.KEGG$sig_df, 
                                        Ca11_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_ORA_KEGG.png"), 
+ggsave(file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_6h_ORA_KEGG.png"), 
        plot = Ca11_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
 
-# (Cp11_6h.ORA.KEGG$plot <- make_dotplot(Cp11_6h.ORA.KEGG$sig_df, 
-#                                    Cp11_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-# ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_ORA.KEGG.png"), 
-#       plot = Cp11_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
+(Cp11_6h.ORA.KEGG$plot <- make_dotplot(Cp11_6h.ORA.KEGG$sig_df,
+                                   Cp11_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
+ggsave(file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp11_6h_ORA.KEGG.png"),
+      plot = Cp11_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
 
-# no significant hits
 (Cp51_6h.ORA.KEGG$plot <- make_dotplot(Cp51_6h.ORA.KEGG$sig_df, 
                                        Cp51_6h.ORA.KEGG$sig_df$Count, type = "KEGG"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_ORA_KEGG.png"), 
-       plot = Cp51_6h.ORA.KEGG$plot, width = 10, height = 8, units = 'in')
+ggsave(file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp51_6h_ORA_KEGG.png"), 
+       plot = Cp51_6h.KEGG$plot, width = 10, height = 8, units = 'in')
 
 
 ##############################################
@@ -380,7 +386,8 @@ Ca11_1h.KEGG <- c(Ca11_1h.KEGG,
                   extract_gsea_results(.gsea = Ca11_1h.KEGG$gsea, .db = kegg_pathways))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA_KEGG.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Ca11_1h_GSEA_KEGG.xlsx"))
 
 Ca11_6h.KEGG <- list()
 Ca11_6h.KEGG <- run_gsea(
@@ -392,20 +399,21 @@ Ca11_6h.KEGG <- c(Ca11_6h.KEGG,
 
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA_KEGG.xlsx"))
+                     file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                               tables_dir, "Ca11_6h_GSEA_KEGG.xlsx"))
 
-# No DEGs
 Cp11_6h.KEGG <- list()
 Cp11_6h.KEGG <- run_gsea(
-   .geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h.entrez$background))], 
-   .terms = kegg_pathways)
- 
-Cp11_6h.KEGG <- c(Cp11_6h.KEGG, 
+  .geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h.entrez$background))],
+  .terms = kegg_pathways)
+
+Cp11_6h.KEGG <- c(Cp11_6h.KEGG,
                   extract_gsea_results(.gsea = Cp11_6h.KEGG$gsea, .db = kegg_pathways))
- 
+
 # Save the results
 openxlsx::write.xlsx(Cp11_6h.KEGG[c(2:3)],
-                    file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA.KEGG.xlsx"))
+                     file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp11_6h_GSEA.KEGG.xlsx"))
 
 Cp51_6h.KEGG <- list()
 Cp51_6h.KEGG <- run_gsea(
@@ -417,24 +425,32 @@ Cp51_6h.KEGG <- c(Cp51_6h.KEGG,
 
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.KEGG[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA_KEGG.xlsx"))
+                     file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp51_6h_GSEA_KEGG.xlsx"))
 
 # Graphical analysis
-## CA11 - 1h - no significant hits
+
+# CA11 - 1h
+(Ca11_1h.KEGG$plot <- make_gseaplot(data =Ca11_1h.KEGG$sig_df, type = "Hallmark"))
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_1h_GSEA_KEGG.png"), 
+       plot = Ca11_1h.KEGG$plot, width = 10, height = 8, units = 'in')
 
 ## CA11 - 6h
-(Ca11_6h.KEGG$plot <- make_gseaplot(data =Ca11_6h.KEGG$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA_KEGG.png"), 
+(Ca11_6h.KEGG$plot <- make_gseaplot(data = Ca11_6h.KEGG$sig_df, type = "Hallmark"))
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_6h_GSEA_KEGG.png"), 
        plot = Ca11_6h.KEGG$plot, width = 10, height = 8, units = 'in')
 
-## CP11 - 6h - no significant hits
+## CP11 - 6h 
 (Cp11_6h.KEGG$plot <- make_gseaplot(data = Cp11_6h.KEGG$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GSEA_KEGG.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp11_6h_GSEA_KEGG.png"), 
        plot = Cp11_6h.KEGG$plot, width = 10, height = 8, units = 'in')
-
 ## CP51 - 6h
 (Cp51_6h.KEGG$plot <- make_gseaplot(data = Cp51_6h.KEGG$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA_KEGG.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp51_6h_GSEA_KEGG.png"), 
        plot = Cp51_6h.KEGG$plot, width = 10, height = 8, units = 'in')
 
 # ----------------------------- GO term -------------------------------- #
@@ -445,7 +461,8 @@ Ca11_1h.GO <- run_gsea(.geneset = Ca11_1h.entrez$background[!is.na(names(Ca11_1h
 Ca11_1h.GO <- c(Ca11_1h.GO, extract_gsea_results(.gsea = Ca11_1h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA_GO.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Ca11_1h_GSEA_GO.xlsx"))
 
 Ca11_6h.GO <- list()
 Ca11_6h.GO <- run_gsea(.geneset = Ca11_6h.entrez$background[!is.na(names(Ca11_6h.entrez$background))], 
@@ -453,15 +470,17 @@ Ca11_6h.GO <- run_gsea(.geneset = Ca11_6h.entrez$background[!is.na(names(Ca11_6h
 Ca11_6h.GO <- c(Ca11_6h.GO, extract_gsea_results(.gsea = Ca11_6h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA_GO.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Ca11_6h_GSEA_GO.xlsx"))
 
 Cp11_6h.GO <- list()
 Cp11_6h.GO <- run_gsea(.geneset = Cp11_6h.entrez$background[!is.na(names(Cp11_6h.entrez$background))], 
-                          .terms = go_terms)
+                       .terms = go_terms)
 Cp11_6h.GO <- c(Cp11_6h.GO, extract_gsea_results(.gsea = Cp11_6h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Cp11_6h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA_GO.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp11_6h_GSEA_GO.xlsx"))
 
 Cp51_6h.GO <- list()
 Cp51_6h.GO <- run_gsea(.geneset = Cp51_6h.entrez$background[!is.na(names(Cp51_6h.entrez$background))], 
@@ -469,24 +488,29 @@ Cp51_6h.GO <- run_gsea(.geneset = Cp51_6h.entrez$background[!is.na(names(Cp51_6h
 Cp51_6h.GO <- c(Cp51_6h.GO, extract_gsea_results(.gsea = Cp51_6h.GO$gsea, .db = go_terms))
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.GO[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA_GO.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp51_6h_GSEA_GO.xlsx"))
 
 # 1.2 Graphical analysis
 ## CA11 - 1h 
 (Ca11_1h.GO$plot <- make_gseaplot(data = Ca11_1h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_GSEA_GO.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_1h_GSEA_GO.png"), 
        plot = Ca11_1h.GO$plot, width = 10, height = 8, units = 'in')
 ## CA11 - 6h
 (Ca11_6h.GO$plot <- make_gseaplot(data = Ca11_6h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA_GO.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_6h_GSEA_GO.png"), 
        plot = Ca11_6h.GO$plot, width = 10, height = 8, units = 'in')
 # CP11 - 6h
 (Cp11_6h.GO$plot <- make_gseaplot(Cp11_6h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GSEA_GO.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp11_6h_GSEA_GO.png"), 
        plot = Cp11_6h.GO$plot, width = 10, height = 8, units = 'in')
 # CP51 - 6h
 (Cp51_6h.GO$plot <- make_gseaplot(Cp51_6h.GO$sig_df, type = "GO"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA_GO.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp51_6h_GSEA_GO.png"), 
        plot = Cp51_6h.GO$plot, width = 10, height = 8, units = 'in')
 
 # ----------------------------- MSigDB Hallmark ------------------------------ #
@@ -501,7 +525,8 @@ Ca11_1h.Hallmark <- c(Ca11_1h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Ca11_1h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_1h_GSEA_Hallmark.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Ca11_1h_GSEA_Hallmark.xlsx"))
 ## Ca11 - 6h
 Ca11_6h.Hallmark <- list()
 Ca11_6h.Hallmark <- run_gsea(
@@ -512,7 +537,8 @@ Ca11_6h.Hallmark <- c(Ca11_6h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Ca11_6h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Ca11_6h_GSEA_Hallmark.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Ca11_6h_GSEA_Hallmark.xlsx"))
 
 ## CP11 - 6h
 Cp11_6h.Hallmark <- list()
@@ -524,7 +550,8 @@ Cp11_6h.Hallmark <- c(Cp11_6h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Cp11_6h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp11_6h_GSEA_Hallmark.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp11_6h_GSEA_Hallmark.xlsx"))
 
 ## CP51 - 6h
 Cp51_6h.Hallmark <- list()
@@ -536,24 +563,29 @@ Cp51_6h.Hallmark <- c(Cp51_6h.Hallmark,
                                            .db = hallmark_sets))
 # Save the results
 openxlsx::write.xlsx(Cp51_6h.Hallmark[c(2:3)],
-                     file.path(results_dir, folder, date, tables_dir, "Cp51_6h_GSEA_Hallmark.xlsx"))
+                     file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                               tables_dir, "Cp51_6h_GSEA_Hallmark.xlsx"))
 
 ## 2.2 Graphical analysis
 ## CA11 - 1h
 (Ca11_1h.Hallmark$plot <- make_gseaplot(data = Ca11_1h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_1h_GSEA_Hallmark.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_1h_GSEA_Hallmark.png"), 
        plot = Ca11_1h.Hallmark$plot, width = 10, height = 8, units = 'in')
 ## CA11 - 6h
 (Ca11_6h.Hallmark$plot <- make_gseaplot(data = Ca11_6h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Ca11_6h_GSEA_Hallmark.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Ca11_6h_GSEA_Hallmark.png"), 
        plot = Ca11_6h.Hallmark$plot, width = 10, height = 8, units = 'in')
 ## CP11 - 6h
 (Cp11_6h.Hallmark$plot <- make_gseaplot(data = Cp11_6h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp11_6h_GSEA_Hallmark.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp11_6h_GSEA_Hallmark.png"), 
        plot = Cp11_6h.Hallmark$plot, width = 10, height = 8, units = 'in')
 ## CP51 - 6h
 (Cp51_6h.Hallmark$plot <- make_gseaplot(data = Cp51_6h.Hallmark$sig_df, type = "Hallmark"))
-ggsave(file.path(results_dir, folder, date, plots_dir,"Cp51_6h_GSEA_Hallmark.png"), 
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir,"Cp51_6h_GSEA_Hallmark.png"), 
        plot = Cp51_6h.Hallmark$plot, width = 10, height = 8, units = 'in')
 
 ##########################################################
@@ -593,7 +625,6 @@ Ca11_1h.combinedGSEA <- rbind(Ca11_1h.GO$sig_df, # GO terms
   dplyr::relocate(c("ID", "Name", "setSize", "geneRatio", "NES", "p.adjust", "core_enrichment"),
                   .before = everything()) %>% 
   dplyr::slice_head(., n = 200)
-
 # Cluster enriched terms on gene set similarity
 Ca11_1h.cluster <- get_cluster(Ca11_1h.combinedGSEA, similarity.matrix, .threshold = 0.25)
 # Select cluster representative terms based on the involved genes' importance
@@ -603,7 +634,8 @@ V(Ca11_1h.cluster$graph)$Representative <- Ca11_1h.cluster$df$Representative
 V(Ca11_1h.cluster$graph)$Description <- Ca11_1h.cluster$df$Name
 # Save results
 write.xlsx(Ca11_1h.cluster$df, 
-           file.path(results_dir, folder, date, tables_dir, "Ca11_1h_total_GSEA_clusters.xlsx"))
+           file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                     tables_dir, "Ca11_1h_total_GSEA_clusters.xlsx"))
 
 ### CA11 - 6h
 Ca11_6h.combinedGSEA <- rbind(Ca11_6h.GO$sig_df, # GO terms
@@ -629,7 +661,8 @@ V(Ca11_6h.cluster$graph)$Representative <- Ca11_6h.cluster$df$Representative
 V(Ca11_6h.cluster$graph)$Description <- Ca11_6h.cluster$df$Name
 # Save results
 write.xlsx(Ca11_6h.cluster$df, 
-           file.path(results_dir, folder, date, tables_dir, "Ca11_6h_top200_GSEA_clusters.xlsx"))
+           file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                     tables_dir, "Ca11_6h_top200_GSEA_clusters.xlsx"))
 
 ### CP11 - 6h
 Cp11_6h.combinedGSEA <- rbind(Cp11_6h.GO$sig_df, # GO terms
@@ -655,7 +688,8 @@ V(Cp11_6h.cluster$graph)$Representative <- Cp11_6h.cluster$df$Representative
 V(Cp11_6h.cluster$graph)$Description <- Cp11_6h.cluster$df$Name
 # Save results
 write.xlsx(Cp11_6h.cluster$df, 
-           file.path(results_dir, folder, date, tables_dir, "Cp11_6h_total_GSEA_clusters.xlsx"))
+           file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                     tables_dir, "Cp11_6h_total_GSEA_clusters.xlsx"))
 
 ### CP51 - 6h
 Cp51_6h.combinedGSEA <- rbind(Cp51_6h.GO$sig_df, # GO terms
@@ -681,7 +715,8 @@ V(Cp51_6h.cluster$graph)$Representative <- Cp51_6h.cluster$df$Representative
 V(Cp51_6h.cluster$graph)$Description <- Cp51_6h.cluster$df$Name
 # Save results
 write.xlsx(Cp51_6h.cluster$df, 
-           file.path(results_dir, folder, date, tables_dir, "Cp51_6h_top200_GSEA_clusters.xlsx"))
+           file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                     tables_dir, "Cp51_6h_top200_GSEA_clusters.xlsx"))
 
 # Network visualization of the enriched clusters 
 # CA11 - 1h
@@ -694,7 +729,8 @@ Ca11_1h.cluster$layout <- layout_with_fr(Ca11_1h.cluster$sub_graph)
                                       .labels =  V(Ca11_1h.cluster$sub_graph)$Name,
                                       .df = Ca11_1h.cluster$df))
 # Save plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Ca11_1h_GSEA_network.png"),
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "Ca11_1h_GSEA_network.png"),
        plot = Ca11_1h.cluster$plot, bg = "white",
        width = 20, height = 14, units = "in")
 
@@ -709,7 +745,8 @@ Ca11_6h.cluster$layout <- layout_with_fr(Ca11_6h.cluster$sub_graph)
                                       .df = Ca11_6h.cluster$df))
 
 # Save plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Ca11_6h_top200_GSEA_network.png"),
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "Ca11_6h_top200_GSEA_network.png"),
        plot = Ca11_6h.cluster$plot, bg = "white",
        width = 20, height = 14, units = "in")
 
@@ -724,7 +761,8 @@ Cp11_6h.cluster$layout <- layout_with_fr(Cp11_6h.cluster$sub_graph)
                                       .df = Cp11_6h.cluster$df))
 
 # Save plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Cp11_6h_GSEA_network.png"),
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "Cp11_6h_GSEA_network.png"),
        plot = Cp11_6h.cluster$plot, bg = "white",
        width = 20, height = 14, units = "in")
 
@@ -739,7 +777,8 @@ Cp51_6h.cluster$layout <- layout_with_fr(Cp51_6h.cluster$sub_graph)
                                       .df = Cp51_6h.cluster$df))
 
 # Save plot
-ggsave(file.path(results_dir, folder, date, plots_dir, "Cp51_6h_top200_GSEA_network.png"),
+ggsave(file.path(results_dir, folder,  paste("mRNA", date, sep = "_"),
+                 plots_dir, "Cp51_6h_top200_GSEA_network.png"),
        plot = Cp51_6h.cluster$plot, bg = "white",
        width = 20, height = 14, units = "in")
 
@@ -753,10 +792,10 @@ if (exists("pancancer.genes") == F) {
             overwrite = TRUE, recursive = FALSE, copy.mode = TRUE)
 }
 
-pancancer.file <- list.files(file.path(data_dir, folder), pattern = "cancer",
+pancancer.file <- list.files(file.path("data", "mrna"), pattern = "cancer",
                              full.names = F)
 
-pancancer.df <- require_file(file.path(data_dir, folder, pancancer.file),
+pancancer.df <- require_file(file.path("data", "mrna", pancancer.file),
                              header = T, na.strings = NA)
 
 pancancer.df <- pancancer.df %>%
@@ -803,7 +842,7 @@ pancancer.upset <- lapply(pancancer.res, function(x) {
 pancancer.arranged <- list()
 for(i in names(pancancer.upset)){
   pancancer.arranged[[i]] <- arrange_venn(pancancer.upset[[i]],
-                                               c("CA11", "CP51", "PANC"),
+                                          c("CA11", "CP51", "PANC"),
                                           extract_regions = T) %>% 
     dplyr::arrange(., region)
 }
@@ -847,14 +886,15 @@ for(i in names(pancancer.vennbase)){
 
 # Save the venn diagrams
 sapply(names(pancancer.venn), function(x){
-  ggsave(file.path(results_dir, folder, date, plots_dir, paste0("HSC2_vs_",x,".png")),
+  ggsave(file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                   plots_dir, paste0("SAT1_vs_",x,".png")),
          plot = pancancer.venn[[x]], width = 16, height = 10, units = 'in')
 })
 
 # Extract the geneIDs from the venn diagrams' subsets
-HSC2_vs_pancancer <- list()
+SAT1_vs_pancancer <- list()
 for(i in names(pancancer.vennbase)){
-  HSC2_vs_pancancer[[i]] <- pancancer.vennbase[[i]] %>%
+  SAT1_vs_pancancer[[i]] <- pancancer.vennbase[[i]] %>%
     dplyr::filter(!region %in% c("CA11","CP51","PANC","CA11-CP51")) %>%
     dplyr::pull(geneID, name = region)
 }
@@ -876,12 +916,13 @@ pancancer.circ <- lapply(names(pancancer.spider), function(x){
     dplyr::mutate(category = as.character(x),
                   category = as.factor(str_replace_all(category,"[.]"," "))) %>%
     dplyr::select(c(category, condition, geneRation, zscore))
-  })
+})
 pancancer.circ <- do.call(rbind.fill, pancancer.circ)
 
 (pancancer.circ_plot <- make_circPlot(pancancer.circ))
-ggsave(file.path(results_dir, folder, date, plots_dir, "vertical_pancancer_circplot.png"), 
-       plot = pancancer.circ_plot, width = 17, height = 10, units = 'in')
+ggsave(file.path(results_dir, folder, paste("mRNA", date, sep = "_"),
+                 plots_dir, "vertical_pancancer_circplot.png"), 
+       plot = pancancer.circ_plot, width = 10, height = 17, units = 'in')
 
 
 

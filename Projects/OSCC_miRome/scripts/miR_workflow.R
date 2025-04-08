@@ -53,7 +53,7 @@ if (exists("miR.readcounts") == F) {
   write.table(miR.counts, file.path(data_dir,miR.folder, "miR_readcounts.csv"),
               sep =",", na = "NA", dec = ".", row.names = F, col.names = T)
   
-  rm(ls = ls()[grep("miR.", ls())])
+  #rm(ls = ls()[grep("miR.", ls())])
 }
 
 ##############################################
@@ -451,6 +451,46 @@ ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_CC_simplo
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_MF_simplot.png"),
        plot = miR.Ca11_6h.GO_network$MF_simplot, width = 10, height = 8, units = 'in')
 
+# combine GO and pathway enrichment results
+### CA11 - 1h
+miR.Ca11_6h.combinedORA <- rbind(miR.Ca11_6h.GO$sig_df, # GO terms
+                                 miR.Ca11_6h.KEGG$sig_df # KEGG pathways
+                                 ) %>% 
+  dplyr::arrange(p.adjust) %>%
+  tibble::rownames_to_column("Name") %>%  
+  dplyr::relocate(c("ID", "Name", "Count", "GeneRatio", "zScore", "p.adjust", "geneID"),
+                  .before = everything()) %>% 
+  dplyr::slice_head(., n = 200)
+# Cluster enriched terms on gene set similarity
+miR.Ca11_6h.cluster <- get_cluster(miR.Ca11_6h.combinedORA, similarity.matrix, type = "ORA", .threshold = 0.25)
+# Select cluster representative terms based on the involved genes' importance
+miR.Ca11_6h.cluster$df <- get_cluster_representative(.cluster = miR.Ca11_6h.cluster$df,
+                                                     .degs = miR.Ca11_6h.targets_filtered$predicted,
+                                                     type = "ORA")
+V(miR.Ca11_6h.cluster$graph)$Representative <- miR.Ca11_6h.cluster$df$Representative
+V(miR.Ca11_6h.cluster$graph)$Description <- miR.Ca11_6h.cluster$df$Name
+# Save results
+write.xlsx(miR.Ca11_6h.cluster$df, 
+           file.path(results_dir, miR.folder, date, tables_dir,
+                     "miR_Ca11_1h_ORA_top200_clusters.xlsx"))
+
+# CA11 - 6h
+miR.Ca11_6h.cluster$sub_graph <- filter_graph(miR.Ca11_6h.cluster$graph, 5)
+set.seed(42)
+miR.Ca11_6h.cluster$layout <- layout_with_fr(miR.Ca11_6h.cluster$sub_graph)
+
+(miR.Ca11_6h.cluster$plot <- plot_network(.net = miR.Ca11_6h.cluster$sub_graph,
+                                      .layout = miR.Ca11_6h.cluster$layout,
+                                      .labels =  V(miR.Ca11_6h.cluster$sub_graph)$Name,
+                                      .df = miR.Ca11_6h.cluster$df,
+                                      type = "ORA"))
+
+# Save plot
+ggsave(file.path(results_dir, miR.folder, date, plots_dir,
+                  "miR_Ca11_6h_top200_ORA_network.png"),
+       plot = miR.Ca11_6h.cluster$plot, bg = "white",
+       width = 20, height = 14, units = "in")
+
 # # C.parapsilosis MOI 1:1 (6h)
 # miR.Cp11_6h.genelist <- get_genelist(.df = Cp11_6h.res$df,
 #                                     .filter = Cp11_6h.res$df[["geneID"]] %in% 
@@ -534,19 +574,19 @@ ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_MF_simplo
 # 7.) Network analysis miRNA target genes                                      #
 ################################################################################
 # C.albicans MOI 1:1 (6h)
-predicted_target_ID <- Ca11_6h.cluster$df %>%
-  dplyr::select(ID, Name, core_enrichment) %>%
-  tidyr::separate_rows(core_enrichment, sep = "/") %>%
-  dplyr::filter(core_enrichment %in% miR.Ca11_6h.targets_filtered$predicted$genesymbol) %>%
+predicted_target_ID <- miR.Ca11_6h.cluster$df %>%
+  dplyr::select(ID, Name, geneID) %>%
+  tidyr::separate_rows(geneID, sep = "/") %>%
+  dplyr::filter(geneID %in% miR.Ca11_6h.targets_filtered$predicted$genesymbol) %>%
   dplyr::group_by(ID) %>%
   dplyr::summarise(Name = first(Name), n = n()) %>%
   dplyr::arrange(desc(n)) %>% 
   dplyr::mutate(rank = row_number())
 
-validated_target_ID <- Ca11_6h.cluster$df %>%
-  dplyr::select(ID, Name, core_enrichment) %>%
-  tidyr::separate_rows(core_enrichment, sep = "/") %>%
-  dplyr::filter(core_enrichment %in% miR.Ca11_6h.targets_filtered$validated$genesymbol) %>%
+validated_target_ID <- miR.Ca11_6h.cluster$df %>%
+  dplyr::select(ID, Name, geneID) %>%
+  tidyr::separate_rows(geneID, sep = "/") %>%
+  dplyr::filter(geneID %in% miR.Ca11_6h.targets_filtered$validated$genesymbol) %>%
   dplyr::group_by(ID) %>%
   dplyr::summarise(Name = first(Name), n = n()) %>%
   dplyr::arrange(desc(n)) %>% 
@@ -558,40 +598,48 @@ interest_ID_df <- dplyr::inner_join(predicted_target_ID, validated_target_ID,
   dplyr::arrange(rank)
 
 write.xlsx(interest_ID_df,
-           file.path(results_dir, miR.folder, date, tables_dir, "Ca11_6h_miR_targets_ID.xlsx"))
+           file.path(results_dir, miR.folder, date, tables_dir, "Ca11_6h_miR_target_terms_ranked.xlsx"))
 
-interest_ID <- dplyr::pull(interest_ID_df, Name, name = ID)[c(1:5)]
+interest_ID <- dplyr::pull(interest_ID_df, Name, name = ID)[c(1:4,6)]
+# GO:0008285 - "GOBP_NEGATIVE_REGULATION_OF_CELL_POPULATION_PROLIFERATION" 
+# GO:0009617 - "GOBP_RESPONSE_TO_BACTERIUM" 
+# GO:0010942 - "GOBP_POSITIVE_REGULATION_OF_CELL_DEATH" 
+# GO:0045859 - "GOBP_REGULATION_OF_PROTEIN_KINASE_ACTIVITY" 
+# GO:0071396 - "GOBP_CELLULAR_RESPONSE_TO_LIPID"
 interest_genes <- unique(miR.Ca11_6h.targets_filtered$validated$genesymbol)
 
 library(scales)
-col_fun <- col_numeric(palette = c("blue", "white", "red"), domain = c(-1*max(Ca11_6h.combinedGSEA$NES),
-                                                                      0, max(Ca11_6h.combinedGSEA$NES)))
-colors <- col_fun(Ca11_6h.combinedGSEA[which(Ca11_6h.combinedGSEA$ID %in% names(interest_ID)),]$NES)
+col_fun <- col_numeric(palette = c("blue", "white", "red"), domain = c(-1*max(miR.Ca11_6h.combinedORA$zScore),
+                                                                      0, max(miR.Ca11_6h.combinedORA$zScore)))
+colors <- col_fun(miR.Ca11_6h.combinedORA[which(miR.Ca11_6h.combinedORA$ID %in% names(interest_ID)),]$zScore)
 
 
 cluster_palette <- setNames(colors, 
-                            c("TNFA_SIGNALING_VIA_NFKB","NEGATIVE_REGULATION_OF_CELL_POPULATION_PROLIFERATION",
-                              "RESPONSE_TO_BACTERIUM","CELLULAR_RESPONSE_TO_LIPID",
-                              "REGULATION_OF_PROTEIN_KINASE_ACTIVITY"))
+                            c("GOBP_CELLULAR_RESPONSE_TO_LIPID",
+                              "GOBP_NEGATIVE_REGULATION_OF_CELL_POPULATION_PROLIFERATION",
+                              "GOBP_RESPONSE_TO_BACTERIUM",
+                              "GOBP_REGULATION_OF_PROTEIN_KINASE_ACTIVITY",
+                              "GOBP_POSITIVE_REGULATION_OF_CELL_DEATH"))
 
 # PANC1 - chronic acidosis
-Ca11_6h.circplot <- getCircplotData(.cluster = Ca11_6h.cluster$df,
-                                  .deg = Ca11_6h.res$sig_df,
-                                  .interest_cluster = interest_ID, 
-                                  .interest_cluster_genes = interest_genes, 
-                                  .palette = cluster_palette)
+miR.Ca11_6h.circplot <- getCircplotData(.cluster = miR.Ca11_6h.cluster$df,
+                                        .deg = Ca11_6h.res$sig_df,
+                                        .interest_cluster = interest_ID,
+                                        .interest_cluster_genes = interest_genes,
+                                        .palette = cluster_palette)
 
-plotCircplot(.path = file.path(results_dir, miR.folder, date, plots_dir, "Ca11_6h_miR_targets_circosplot.png"),
-             .data = Ca11_6h.circplot$data.mat,
-             .color = Ca11_6h.circplot$grid.col,
-             .links = Ca11_6h.circplot$border.mat,
+plotCircplot(.path = file.path(results_dir, miR.folder, date, plots_dir, 
+                               "Ca11_6h_miR_targets_circosplot.png"),
+             .data = miR.Ca11_6h.circplot$data.mat,
+             .color = miR.Ca11_6h.circplot$grid.col,
+             .links = miR.Ca11_6h.circplot$border.mat,
              .labels = c(interest_ID, interest_genes))
 # Write data matrix
-Ca11_6h.circplot_df <- merge(
-  as.data.frame(Ca11_6h.circplot$data.mat) %>% dplyr::mutate(genesymbol = row.names(.)),
-  as.data.frame(Ca11_6h.circplot$data.mat) %>% dplyr::mutate(genesymbol = row.names(.)),
+miR.Ca11_6h.circplot_df <- merge(
+  as.data.frame(miR.Ca11_6h.circplot$data.mat) %>% dplyr::mutate(genesymbol = row.names(.)),
+  as.data.frame(miR.Ca11_6h.circplot$data.mat) %>% dplyr::mutate(genesymbol = row.names(.)),
   by = "genesymbol", suffixes = c("",".weight")) %>% 
-  dplyr::mutate(across(TNFA_SIGNALING_VIA_NFKB:REGULATION_OF_PROTEIN_KINASE_ACTIVITY, 
+  dplyr::mutate(across(GOBP_CELLULAR_RESPONSE_TO_LIPID:GOBP_POSITIVE_REGULATION_OF_CELL_DEATH, 
                        ~ifelse(.x == 0, F, T))) %>% 
   dplyr::left_join(Ca11_6h.res$sig_df[,c("geneID","log2FoldChange","padj")],
                    by = c("genesymbol" = "geneID")) %>% 
@@ -600,7 +648,7 @@ Ca11_6h.circplot_df <- merge(
   dplyr::relocate(genesymbol, log2FoldChange, padj, miRname, log2FoldChange.miR, padj.miR,
                   .before = 1)
 
-write.xlsx(Ca11_6h.circplot_df,
+write.xlsx(miR.Ca11_6h.circplot_df,
            file.path(results_dir, miR.folder, date, tables_dir, 
                      "Ca11_6h_miR_targets_score_circosplot.xlsx"))
 
@@ -621,3 +669,105 @@ miR.Ca11_6h.barplot <- miR.Ca11_6h.targets_filtered$validated %>%
 (miRNA_plots <- plot_miRNA_targets(miR.Ca11_6h.barplot))
 ggsave(file.path(results_dir, miR.folder, date, plots_dir,"miR_Ca11_6h_targets_barplot.png"),
        plot = miRNA_plots, width = 6, height = 10, units = 'in')
+
+################################################################################
+# 8.) miRNA targets vs Pancancer genes                                         #
+################################################################################
+miR.Ca11_6h.pancancer <- list()
+for (cat in names(pancancer.genes)){
+  miR.Ca11_6h.pancancer[[cat]] <- miR.Ca11_6h.targets_filtered$predicted %>% 
+    dplyr::filter(genesymbol %in% pancancer.genes[[cat]]$geneID) %>% 
+    dplyr::mutate(validated = ifelse(TarBaseAccession == "", "predicted", "validated"),
+                  category = as.character(cat)) %>%
+    dplyr::select(miRname, log2FoldChange.miR, padj.miR, 
+                  genesymbol, log2FoldChange, padj,
+                  binding_site, position, validated, category)
+}
+write.xlsx(miR.Ca11_6h.pancancer,
+           file.path(results_dir, miR.folder, date, tables_dir, "Ca11_6h_miR_targets_pancancer.xlsx"))
+
+# Load package
+library(networkD3)
+miR.Ca11_6h.pancancer.sankey <- list()
+miR.Ca11_6h.pancancer.sankey$df <- lapply(miR.Ca11_6h.pancancer, function(x){
+  x %>% 
+    dplyr::select(miRname:padj, category)}) %>% 
+  do.call(rbind, .)
+
+miR.Ca11_6h.pancancer.sankey$rank <- miR.Ca11_6h.pancancer.sankey$df %>% 
+  dplyr::group_by(miRname, genesymbol) %>% 
+  dplyr::summarise(category = paste(category, collapse = ", "),
+                   score = n()) %>% 
+  dplyr::arrange(desc(score)) %>% 
+  dplyr::filter(score >= 4)
+
+miR.Ca11_6h.pancancer.sankey$nodes <- data.frame(
+  name = c(unique(miR.Ca11_6h.pancancer.sankey$rank$miRname),
+           unique(miR.Ca11_6h.pancancer.sankey$rank$genesymbol),
+           unique(unlist(map(.x = miR.Ca11_6h.pancancer.sankey$rank$category,
+                             .f = strsplit, split = ", "))))
+)
+
+miR.Ca11_6h.pancancer.sankey$links <- rbind(
+  miR.Ca11_6h.pancancer.sankey$df %>% 
+    dplyr::rowwise() %>% 
+    dplyr::mutate(score = abs(log2FoldChange.miR)*(-log10(padj.miR))) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(miRname, genesymbol, score) %>%
+    dplyr::distinct() %>% 
+    setNames(., c("from","to","score")),
+  miR.Ca11_6h.pancancer.sankey$df %>% 
+    dplyr::rowwise() %>% 
+    dplyr::mutate(score = abs(log2FoldChange)*(-log10(padj))) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(genesymbol, category, score) %>%
+    dplyr::distinct() %>% 
+    setNames(., c("from","to","score"))
+)
+
+miR.Ca11_6h.pancancer.sankey$links <- miR.Ca11_6h.pancancer.sankey$links %>% 
+  dplyr::rowwise() %>% 
+  dplyr::mutate(
+    from = match(from, miR.Ca11_6h.pancancer.sankey$nodes$name) - 1,
+    to = match(to, miR.Ca11_6h.pancancer.sankey$nodes$name) -1 ) %>% 
+  dplyr::ungroup() %>%
+  dplyr::filter(complete.cases(.)) %>% 
+  as.data.frame(.)
+  
+miR.Ca11_6h.pancancer.sankey$colours <- c(
+  "hsa-miR-1268b" = -3.006558, "hsa-miR-16-1-3p" = -1.989535, "hsa-miR-30c-1-3p" = -1.286685,
+  "hsa-miR-374a-3p" = -1.292275, "hsa-miR-1268a" = -3.003816, "hsa-miR-23b-5p" = -2.041148,
+  "hsa-miR-301a-5p" = -1.337642, "hsa-miR-4521" = -2.020863, 
+  "JUN" = 5.160952, "MMP3" = 4.866929, "NR4A1" = 8.796124, "SOX9" = 2.791874, "VEGFA" = 2.749656, 
+  "IL1B" = 2.590589, "ADAMTS1" = 3.941442, "EPHA2"= 4.078789, "SDC4" = 1.89774,
+  "Angiogenesis" = 4.123106, "Cancer.Metabolism" = 1.414214, "Transcription.Factor" = 2.449490,
+  "Tumor.Growth" = 4.146140, "Tumor.Invasion" = 3.316625, "ECM.Layers" = 3.162278,
+  "ECM.Remodeling" = 2.449490, "EMT" = 2.828427, "Hypoxia" = 2.449490, "Metastasis" = 0.000000
+)
+
+col_fun <- col_numeric(palette = c("blue", "white", "red"), 
+                       domain = c(-1*max(miR.Ca11_6h.pancancer.sankey$colours),0,
+                                  max(miR.Ca11_6h.pancancer.sankey$colours)))
+colors <- col_fun(miR.Ca11_6h.pancancer.sankey$colours)
+# prepare color scale: I give one specific color for each node.
+my_color <- 'd3.scaleOrdinal() .domain(["hsa-miR-1268b", "hsa-miR-16-1-3p","hsa-miR-30c-1-3p",
+"hsa-miR-374a-3p","hsa-miR-1268a","hsa-miR-23b-5p","hsa-miR-301a-5p","hsa-miR-4521","JUN","MMP3",
+"NR4A1","SOX9","VEGFA","IL1B","ADAMTS1","EPHA2","SDC4","Angiogenesis","Cancer.Metabolism",
+"Transcription.Factor","Tumor.Growth","Tumor.Invasion","ECM.Layers","ECM.Remodeling","EMT",
+"Hypoxia","Metastasis" ]) .range(["#CEAFFF", "#E0CAFF", "#EBDDFF", "#EBDCFF", "#CEAFFF",
+"#DFC9FF", "#EADBFF", "#DFC9FF", "#FF8C6D", "#FF9375", "#FF0000", "#FFC2AE", "#FFC3AF",
+"#FFC7B4", "#FFA88E", "#FFA58A", "#FFD6C7", "#FFA489", "#FFE0D5", "#FFCAB8", "#FFA488",
+"#FFB69F", "#FFBAA3", "#FFCAB8", "#FFC1AD", "#FFCAB8", "#FFFFFF"])'
+
+# Thus we can plot it
+p <- sankeyNetwork(Links = miR.Ca11_6h.pancancer.sankey$links,
+                   Nodes = miR.Ca11_6h.pancancer.sankey$nodes,
+                   Source = "from", Target = "to", Value = "score", NodeID = "name",
+                   units = "", fontSize = 8, nodeWidth = 30, colourScale=my_color)
+p
+
+saveNetwork(p, file.path(results_dir, miR.folder, date, plots_dir,
+                          "Ca11_6h_miR_targets_pancancer_sankey.html"))
+
+write.xlsx(miR.Ca11_6h.pancancer.sankey,
+           file.path(results_dir, miR.folder, date, tables_dir, "Ca11_6h_miR_targets_pancancer_sankey.xlsx"))
